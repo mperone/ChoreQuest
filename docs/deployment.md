@@ -46,6 +46,21 @@ docker compose logs --tail=100 chorequest
 curl http://localhost:8122/api/health
 ```
 
+## Startup Migrations
+
+ChoreQuest records startup database migrations in a `schema_migrations` table inside the SQLite database. When the container starts, the app checks that table and applies any pending migrations before FastAPI begins serving requests.
+
+If a pending migration changes the database, the app first creates a SQLite backup in the database directory's `backups/` folder. With the production Docker volume, that means backups live under `/docker/containers/chorequest/data/backups/`.
+
+Migration rules:
+
+- If backup creation fails, startup fails before applying the migration.
+- If a migration fails, startup fails and the migration is not marked as applied.
+- Migrations are recorded only after they complete successfully.
+- Re-running the container skips migrations already listed in `schema_migrations`.
+
+Keep the manual pre-deploy backup step. Automatic migration backups are a safety net, not a replacement for an intentional release backup.
+
 ## Rollback
 
 If the release fails:
