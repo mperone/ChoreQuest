@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
+import { formatScheduleDays } from '../utils/scheduleDays';
 import Modal from '../components/Modal';
 import QuestCreateModal from '../components/QuestCreateModal';
 import QuestAssignModal from '../components/QuestAssignModal';
@@ -34,7 +35,6 @@ const DIFFICULTY_OPTIONS = [
   { value: 'expert', label: 'Expert', level: 4 },
 ];
 const DIFFICULTY_LEVEL = { easy: 1, medium: 2, hard: 3, expert: 4 };
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const selectClass =
   'bg-navy-light border border-border text-cream p-2 rounded-md text-sm ' +
@@ -72,7 +72,7 @@ function RecurrenceIndicator({ recurrence, customDays }) {
       <span className="capitalize">{recurrence}</span>
       {recurrence === 'custom' && customDays?.length > 0 && (
         <span className="text-muted">
-          ({customDays.map((d) => DAY_NAMES[d] || d).join(', ')})
+          ({formatScheduleDays(customDays)})
         </span>
       )}
     </div>

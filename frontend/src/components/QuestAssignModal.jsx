@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle } from '../utils/questThemeText';
+import { DAY_NAMES, formatScheduleDays, normalizeScheduleDays } from '../utils/scheduleDays';
 import Modal from './Modal';
 import AvatarDisplay from './AvatarDisplay';
 import {
@@ -28,7 +29,6 @@ const ROTATION_CADENCE_OPTIONS = [
   { value: 'fortnightly', label: 'Fortnightly' },
   { value: 'monthly', label: 'Monthly' },
 ];
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const selectClass =
   'bg-navy-light border border-border text-cream p-2 rounded text-sm ' +
@@ -89,7 +89,7 @@ export default function QuestAssignModal({
         if (firstActive) {
           if (firstActive.recurrence === 'custom' && firstActive.custom_days?.length) {
             setScheduleFrequency('daily'); // underlying default for day-picker mode
-            setScheduleDays(firstActive.custom_days);
+            setScheduleDays(normalizeScheduleDays(firstActive.custom_days));
           } else {
             setScheduleFrequency(firstActive.recurrence || 'once');
             setScheduleDays([]);
@@ -157,7 +157,7 @@ export default function QuestAssignModal({
     setScheduleDays((prev) =>
       prev.includes(dayIdx)
         ? prev.filter((d) => d !== dayIdx)
-        : [...prev, dayIdx]
+        : normalizeScheduleDays([...prev, dayIdx])
     );
   };
 
@@ -179,7 +179,7 @@ export default function QuestAssignModal({
   // Compute the effective recurrence + custom_days from shared schedule
   const getEffectiveSchedule = () => {
     if (scheduleDays.length > 0) {
-      return { recurrence: 'custom', custom_days: [...scheduleDays] };
+      return { recurrence: 'custom', custom_days: normalizeScheduleDays(scheduleDays) };
     }
     return { recurrence: scheduleFrequency, custom_days: null };
   };
@@ -231,11 +231,7 @@ export default function QuestAssignModal({
   // Summary text for the schedule
   const scheduleLabel = (() => {
     if (hasDaysSelected) {
-      return scheduleDays
-        .slice()
-        .sort((a, b) => a - b)
-        .map((d) => DAY_NAMES[d])
-        .join(', ');
+      return formatScheduleDays(scheduleDays);
     }
     const opt = FREQUENCY_OPTIONS.find((f) => f.value === scheduleFrequency);
     return opt ? opt.label : scheduleFrequency;
@@ -436,7 +432,7 @@ export default function QuestAssignModal({
               </div>
               <p className="text-muted text-xs mt-1">
                 {hasDaysSelected
-                  ? `Quest appears on ${scheduleDays.slice().sort((a, b) => a - b).map((d) => DAY_NAMES[d]).join(', ')}.`
+                  ? `Quest appears on ${formatScheduleDays(scheduleDays)}.`
                   : 'Pick specific days, or leave empty to use the frequency above.'}
               </p>
             </div>

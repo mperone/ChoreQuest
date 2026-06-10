@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
+import { formatScheduleDays } from '../utils/scheduleDays';
 import {
   ArrowLeft,
   Star,
@@ -31,7 +32,6 @@ const DIFFICULTY_COLORS = [
   'text-purple',
   'text-gold',
 ];
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const CATEGORY_COLORS = {
   cleaning: 'bg-accent/20 text-accent border-accent/40',
@@ -399,7 +399,7 @@ export default function ChoreDetail() {
                 {chore.recurrence === 'custom' &&
                   chore.custom_days?.length > 0 && (
                     <span className="text-muted text-xs ml-1">
-                      ({chore.custom_days.map((d) => DAY_NAMES[d] || d).join(', ')})
+                      ({formatScheduleDays(chore.custom_days)})
                     </span>
                   )}
               </p>
