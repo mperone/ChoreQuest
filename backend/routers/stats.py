@@ -12,6 +12,7 @@ from backend.models import (
     UserRole,
     Chore,
     ChoreAssignment,
+    ChoreAssignmentRule,
     AssignmentStatus,
     PointTransaction,
     Achievement,
@@ -161,6 +162,18 @@ async def get_kid_detail(
     )
     assignments = result.scalars().all()
 
+    rule_map: dict[tuple[int, int], ChoreAssignmentRule] = {}
+    if assignments:
+        rules_result = await db.execute(
+            select(ChoreAssignmentRule).where(
+                ChoreAssignmentRule.user_id == kid_id,
+                ChoreAssignmentRule.chore_id.in_([a.chore_id for a in assignments]),
+                ChoreAssignmentRule.is_active == True,
+            )
+        )
+        for rule in rules_result.scalars().all():
+            rule_map[(rule.chore_id, rule.user_id)] = rule
+
     effective = await _effective_streak(db, kid)
     return {
         "kid": {
@@ -170,7 +183,10 @@ async def get_kid_detail(
             "points_balance": kid.points_balance,
             "current_streak": effective,
         },
-        "assignments": [_build_kid_assignment(a) for a in assignments],
+        "assignments": [
+            _build_kid_assignment(a, rule_map.get((a.chore_id, a.user_id)))
+            for a in assignments
+        ],
     }
 
 
@@ -493,7 +509,10 @@ def _build_leaderboard_entry(
     }
 
 
-def _build_kid_assignment(a: ChoreAssignment) -> dict:
+def _build_kid_assignment(
+    a: ChoreAssignment,
+    rule: ChoreAssignmentRule | None = None,
+) -> dict:
     return {
         "id": a.id,
         "chore_id": a.chore_id,
@@ -508,9 +527,21 @@ def _build_kid_assignment(a: ChoreAssignment) -> dict:
             "description": a.chore.description,
             "points": a.chore.points,
             "difficulty": a.chore.difficulty.value if a.chore.difficulty else None,
+            "icon": a.chore.icon,
+            "category_id": a.chore.category_id,
             "category": a.chore.category.name if a.chore.category else None,
+            "custom_days": a.chore.custom_days,
+            "schedule_type": rule.schedule_type if rule else None,
+            "start_date": rule.start_date if rule else None,
+            "weekdays": rule.weekdays if rule else None,
+            "month_day": rule.month_day if rule else None,
             "requires_photo": a.chore.requires_photo,
+            "daypart": a.chore.daypart,
+            "sort_order": a.chore.sort_order,
             "is_optional": a.is_optional,
+            "is_active": a.chore.is_active,
+            "created_by": a.chore.created_by,
+            "created_at": a.chore.created_at,
             "recurrence": a.chore.recurrence.value if a.chore.recurrence else None,
         } if a.chore else None,
     }

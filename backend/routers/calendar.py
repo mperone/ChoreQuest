@@ -237,6 +237,8 @@ def _build_assignment_entry(
             "weekdays": rule.weekdays if rule else None,
             "month_day": rule.month_day if rule else None,
             "requires_photo": effective_requires_photo,
+            "daypart": a.chore.daypart,
+            "sort_order": a.chore.sort_order,
             "is_optional": a.is_optional,
             "is_active": a.chore.is_active,
             "created_by": a.chore.created_by,
