@@ -2,8 +2,13 @@ import unittest
 
 from pydantic import ValidationError
 
-from backend.models import ChoreDaypart
-from backend.schemas import ChoreDaypartOrderItem, ChoreDaypartReorderRequest
+from backend.models import ChoreDaypart, Difficulty, Recurrence
+from backend.schemas import (
+    ChoreCreate,
+    ChoreDaypartOrderItem,
+    ChoreDaypartReorderRequest,
+    ChoreUpdate,
+)
 
 
 class ChoreDaypartSchemaTests(unittest.TestCase):
@@ -25,6 +30,20 @@ class ChoreDaypartSchemaTests(unittest.TestCase):
                 daypart="morning",
                 sort_order=-1,
             )
+
+    def test_chore_create_and_update_require_non_negative_sort_order(self):
+        with self.assertRaises(ValidationError):
+            ChoreCreate(
+                title="Clean sink",
+                points=5,
+                difficulty=Difficulty.easy,
+                category_id=1,
+                recurrence=Recurrence.daily,
+                sort_order=-1,
+            )
+
+        with self.assertRaises(ValidationError):
+            ChoreUpdate(sort_order=-1)
 
 
 if __name__ == "__main__":

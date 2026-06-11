@@ -1146,6 +1146,7 @@ async def reorder_chore_dayparts(
         chore.sort_order = item.sort_order
 
     await db.commit()
+    await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=user.id)
 
     ordered = sorted(
         chores.values(),

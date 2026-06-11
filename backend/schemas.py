@@ -88,7 +88,7 @@ class ChoreCreate(BaseModel):
     custom_days: list[int] | None = None
     requires_photo: bool = False
     daypart: ChoreDaypart = ChoreDaypart.anytime
-    sort_order: int = 0
+    sort_order: int = Field(default=0, ge=0)
     assigned_user_ids: list[int] = []
 
 
@@ -103,7 +103,7 @@ class ChoreUpdate(BaseModel):
     custom_days: list[int] | None = None
     requires_photo: bool | None = None
     daypart: ChoreDaypart | None = None
-    sort_order: int | None = None
+    sort_order: int | None = Field(None, ge=0)
     assigned_user_ids: list[int] | None = None
 
 
