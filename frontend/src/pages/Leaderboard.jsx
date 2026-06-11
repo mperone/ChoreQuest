@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useId, useRef } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
@@ -29,7 +29,18 @@ function shortDate(dateStr) {
   return `${month}/${day}`;
 }
 
-function DailyBarChart({ days, dataKey, color, suffix = '' }) {
+function DailyBarChart({
+  days,
+  dataKey,
+  color,
+  suffix = '',
+  label = 'Daily progress chart',
+  description,
+}) {
+  const chartId = useId();
+  const titleId = `${chartId}-title`;
+  const descId = `${chartId}-desc`;
+
   if (!days || days.length === 0) {
     return (
       <p className="text-muted text-sm text-center py-12">
@@ -49,8 +60,12 @@ function DailyBarChart({ days, dataKey, color, suffix = '' }) {
       className="w-full h-32"
       preserveAspectRatio="none"
       role="img"
-      aria-label="Daily progress chart"
+      aria-labelledby={description ? `${titleId} ${descId}` : titleId}
     >
+      <title id={titleId}>{label}</title>
+      {description && (
+        <desc id={descId}>{description}</desc>
+      )}
       {days.map((day, index) => {
         const value = day[dataKey] || 0;
         const barHeight = Math.max((value / max) * (height - padding * 2), value > 0 ? 2 : 0.75);
@@ -242,7 +257,7 @@ function SnapshotRail({ snapshot }) {
   );
 }
 
-function ProgressTabButton({ tab, active, onClick }) {
+function ProgressTabButton({ tab, active, buttonRef, onClick }) {
   const Icon = tab.icon;
 
   return (
@@ -252,6 +267,8 @@ function ProgressTabButton({ tab, active, onClick }) {
       id={`progress-tab-${tab.id}`}
       aria-selected={active}
       aria-controls={`progress-panel-${tab.id}`}
+      tabIndex={active ? 0 : -1}
+      ref={buttonRef}
       onClick={() => onClick(tab.id)}
       className={`inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
         active
@@ -332,7 +349,14 @@ function TrendsPanel({ bestDay, progressDays, snapshot, summary }) {
               </span>
             )}
           </div>
-          <DailyBarChart days={progressDays} dataKey="xp" color="#f59e0b" suffix=" XP" />
+          <DailyBarChart
+            days={progressDays}
+            dataKey="xp"
+            color="#f59e0b"
+            suffix=" XP"
+            label="30-day XP trend"
+            description="Daily XP earned over the last 30 days."
+          />
         </section>
 
         <section className="rounded-md border border-border/70 bg-surface-raised/20 p-3">
@@ -340,7 +364,14 @@ function TrendsPanel({ bestDay, progressDays, snapshot, summary }) {
             <BarChart3 size={16} className="text-emerald" />
             Completion
           </h3>
-          <DailyBarChart days={progressDays} dataKey="completed" color="#10b981" suffix=" completed" />
+          <DailyBarChart
+            days={progressDays}
+            dataKey="completed"
+            color="#10b981"
+            suffix=" completed"
+            label="30-day completion trend"
+            description="Daily completed quests over the last 30 days."
+          />
           <div className="flex items-center justify-between text-xs text-muted mt-2">
             <span>{summary.total_completed || 0} done</span>
             <span>{formatPercent(summary.completion_rate)} overall</span>
@@ -420,9 +451,46 @@ function ProgressDashboard({
   topScore,
   user,
 }) {
+  const tabRefs = useRef({});
   const selectedTab = PROGRESS_TABS.some((tab) => tab.id === activeTab)
     ? activeTab
     : 'standings';
+
+  const selectTab = useCallback((tabId, shouldFocus = false) => {
+    onTabChange(tabId);
+
+    if (shouldFocus) {
+      const focusSelectedTab = () => {
+        tabRefs.current[tabId]?.focus();
+      };
+
+      if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+        window.requestAnimationFrame(focusSelectedTab);
+      } else {
+        focusSelectedTab();
+      }
+    }
+  }, [onTabChange]);
+
+  const handleTabKeyDown = useCallback((event) => {
+    const currentIndex = PROGRESS_TABS.findIndex((tab) => tab.id === selectedTab);
+    let nextIndex = currentIndex;
+
+    if (event.key === 'ArrowLeft') {
+      nextIndex = (currentIndex - 1 + PROGRESS_TABS.length) % PROGRESS_TABS.length;
+    } else if (event.key === 'ArrowRight') {
+      nextIndex = (currentIndex + 1) % PROGRESS_TABS.length;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = PROGRESS_TABS.length - 1;
+    } else {
+      return;
+    }
+
+    event.preventDefault();
+    selectTab(PROGRESS_TABS[nextIndex].id, true);
+  }, [selectTab, selectedTab]);
 
   return (
     <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)] items-start">
@@ -431,6 +499,7 @@ function ProgressDashboard({
         <div
           role="tablist"
           aria-label="Progress details"
+          onKeyDown={handleTabKeyDown}
           className="flex flex-wrap gap-2 border-b border-border/70 pb-3"
         >
           {PROGRESS_TABS.map((tab) => (
@@ -438,7 +507,10 @@ function ProgressDashboard({
               key={tab.id}
               tab={tab}
               active={selectedTab === tab.id}
-              onClick={onTabChange}
+              buttonRef={(node) => {
+                tabRefs.current[tab.id] = node;
+              }}
+              onClick={selectTab}
             />
           ))}
         </div>
