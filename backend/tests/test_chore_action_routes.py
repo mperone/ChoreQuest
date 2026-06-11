@@ -1,13 +1,14 @@
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from backend.database import Base
-from backend.dependencies import require_parent
+from backend.database import Base, get_db
+from backend.dependencies import get_current_user, require_parent
 from backend.models import (
     Chore,
     ChoreCategory,
@@ -80,6 +81,75 @@ class ChoreDaypartReorderEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.engine.dispose()
+
+    async def test_reorder_route_forbids_kid_request(self):
+        app = FastAPI()
+        app.include_router(router)
+        kid = User(
+            id=99,
+            username="kid",
+            display_name="Kid",
+            password_hash="hash",
+            role=UserRole.kid,
+        )
+
+        async def override_current_user():
+            return kid
+
+        async def override_get_db():
+            yield object()
+
+        app.dependency_overrides[get_current_user] = override_current_user
+        app.dependency_overrides[get_db] = override_get_db
+
+        body = b'{"items":[]}'
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api/chores/reorder-dayparts",
+            "raw_path": b"/api/chores/reorder-dayparts",
+            "query_string": b"",
+            "root_path": "",
+            "headers": [
+                (b"host", b"testserver"),
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+            ],
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+        }
+        messages = []
+        request_sent = False
+
+        async def receive():
+            nonlocal request_sent
+            if not request_sent:
+                request_sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            messages.append(message)
+
+        await app(scope, receive, send)
+
+        response_start = next(
+            message for message in messages if message["type"] == "http.response.start"
+        )
+        response_body = b"".join(
+            message.get("body", b"")
+            for message in messages
+            if message["type"] == "http.response.body"
+        )
+
+        self.assertEqual(response_start["status"], 403)
+        self.assertEqual(
+            json.loads(response_body)["detail"],
+            "Parent or admin role required",
+        )
 
     async def _seed_users_and_category(self, db):
         parent = User(
