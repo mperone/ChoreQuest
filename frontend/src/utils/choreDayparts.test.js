@@ -59,9 +59,9 @@ test('groups today chores into now, anytime, later, and bonus', () => {
   assert.deepEqual(groups.anytime.items.map((entry) => entry.title), ['Water plants'])
   assert.deepEqual(groups.later.items.map((entry) => entry.title), ['Read'])
   assert.deepEqual(groups.bonus.items.map((entry) => entry.title), ['Extra help'])
-  assert.equal(groups.requiredTotal, 3)
+  assert.equal(groups.requiredTotal, 4)
   assert.equal(groups.requiredDone, 1)
-  assert.equal(groups.requiredLeft, 2)
+  assert.equal(groups.requiredLeft, 3)
 })
 
 test('hides empty daily groups and sorts by daypart order then sort order', () => {

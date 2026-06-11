@@ -84,22 +84,20 @@ export function groupDailyAssignments(items, { currentDaypart } = {}) {
       continue
     }
 
+    requiredTotal += 1
+
     if (done) {
-      requiredTotal += 1
       requiredDone += 1
       continue
     }
 
     if (daypart === activeDaypart) {
-      requiredTotal += 1
       sections.now.items.push(item)
     } else if (daypart === 'anytime') {
-      requiredTotal += 1
       sections.anytime.items.push(item)
     } else if (futureRequired) {
       sections.later.items.push(item)
     } else {
-      requiredTotal += 1
       sections.anytime.items.push(item)
     }
   }
