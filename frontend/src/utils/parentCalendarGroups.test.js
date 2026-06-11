@@ -81,7 +81,11 @@ test('labels parent calendar statuses using the assignment date', () => {
   assert.equal(parentCalendarStatus(
     assignment({ id: 1, choreId: 10, title: 'Make Bed', userId: 2, kid: 'Mia' }),
     '2026-06-10',
-  ).label, 'Ready')
+  ).label, 'Due today')
+  assert.equal(parentCalendarStatus(
+    assignment({ id: 5, choreId: 10, title: 'Make Bed', userId: 2, kid: 'Mia', date: '2026-06-11' }),
+    '2026-06-10',
+  ).label, 'Scheduled')
   assert.equal(parentCalendarStatus(
     assignment({ id: 2, choreId: 10, title: 'Make Bed', userId: 2, kid: 'Mia', date: '2026-06-09' }),
     '2026-06-10',

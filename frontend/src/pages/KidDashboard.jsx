@@ -252,7 +252,7 @@ export default function KidDashboard() {
         {totalCount > 0 && (
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-muted text-xs font-medium">Required Progress</span>
+              <span className="text-muted text-xs font-medium">Today's Required Quests</span>
               <span className="text-cream text-xs font-bold">{completedCount}/{totalCount}</span>
             </div>
             <div className="xp-bar">

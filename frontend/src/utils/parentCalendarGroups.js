@@ -110,5 +110,8 @@ export function parentCalendarStatus(assignment, today) {
   if (assignment?.date < today) {
     return { label: 'Overdue', tone: 'overdue' }
   }
-  return { label: 'Ready', tone: 'pending' }
+  if (assignment?.date === today) {
+    return { label: 'Due today', tone: 'pending' }
+  }
+  return { label: 'Scheduled', tone: 'pending' }
 }
