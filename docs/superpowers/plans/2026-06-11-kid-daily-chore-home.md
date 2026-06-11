@@ -57,7 +57,7 @@ Those files are already dirty in the local checkout and are unrelated to this fe
 
 - Use `chore` language on kid surfaces. `ChoreQuest` may remain as the app brand.
 - All kid-facing completion buttons say `Mark Done`.
-- Photo-required chores still start with `Mark Done`; tapping opens the proof upload flow, then the card shows `Waiting for approval`.
+- Photo-required chores still use `Mark Done` as the primary action. Their card also shows inline proof UI: `Photo needed` plus `Add Photo` before a file is attached, then a thumbnail/check state plus `Change` after selection. If a kid taps `Mark Done` before adding proof, the same card opens the photo picker instead of navigating away.
 - All completed kid chores go through parent approval. The kid UI does not say `Submit for Approval` as the primary action.
 - Empty `Now`, `Anytime`, `Later`, and `Bonus` sections disappear.
 - `Now` means required chores for the current daypart.
@@ -1274,13 +1274,14 @@ Below the status strip, render:
 
 - [ ] **Step 7: Add consistent chore cards**
 
-Create a local `DailyChoreCard` component inside `KidDashboard.jsx`:
+Create a local `DailyChoreCard` component inside `KidDashboard.jsx`. The proof control stays on the card for photo-required chores:
 
 ```jsx
-function DailyChoreCard({ item, onMarkDone, uploading }) {
+function DailyChoreCard({ item, onMarkDone, onPhotoSelected, selectedPhoto, uploading }) {
   const chore = item.chore || item
   const label = kidCompletionLabelForAssignment(item)
   const disabled = label !== 'Mark Done' || uploading
+  const needsPhoto = Boolean(chore.requires_photo)
 
   return (
     <article className="rounded-lg border border-border bg-white p-4 shadow-sm">
@@ -1302,6 +1303,26 @@ function DailyChoreCard({ item, onMarkDone, uploading }) {
           {uploading ? 'Saving...' : label}
         </button>
       </div>
+      {needsPhoto && label === 'Mark Done' && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2">
+          <div className="min-w-0">
+            <div className="text-xs font-black uppercase text-muted">Photo needed</div>
+            <div className="truncate text-sm font-semibold text-ink">
+              {selectedPhoto ? selectedPhoto.name : 'Add proof before marking done'}
+            </div>
+          </div>
+          <label className="shrink-0 cursor-pointer rounded-md bg-white px-3 py-2 text-sm font-black text-primary shadow-sm">
+            {selectedPhoto ? 'Change' : 'Add Photo'}
+            <input
+              data-proof-input={item.assignment_id || item.id || item.chore_id}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => onPhotoSelected(item, event.target.files?.[0] || null)}
+            />
+          </label>
+        </div>
+      )}
     </article>
   )
 }
@@ -1322,6 +1343,8 @@ Render sections with empty groups hidden:
             key={item.assignment_id || item.id}
             item={item}
             uploading={completingChoreId === (item.id || item.chore_id)}
+            selectedPhoto={photoProofFiles[item.assignment_id || item.id]}
+            onPhotoSelected={handleHomePhotoSelected}
             onMarkDone={handleHomeMarkDone}
           />
         ))}
@@ -1337,22 +1360,51 @@ Add state:
 
 ```javascript
 const [completingChoreId, setCompletingChoreId] = useState(null)
-const [photoProofTarget, setPhotoProofTarget] = useState(null)
+const [photoProofFiles, setPhotoProofFiles] = useState({})
 ```
 
 Add the handler:
 
 ```javascript
+const proofKeyFor = (item) => item.assignment_id || item.id || item.chore_id
+
+const handleHomePhotoSelected = (item, file) => {
+  const key = proofKeyFor(item)
+  setPhotoProofFiles((prev) => {
+    if (!file) {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    }
+    return { ...prev, [key]: file }
+  })
+}
+
 const handleHomeMarkDone = async (item) => {
   const chore = item.chore || item
+  const proofKey = proofKeyFor(item)
+  const proofFile = photoProofFiles[proofKey]
   if (chore.requires_photo) {
-    setPhotoProofTarget(item)
-    return
+    if (!proofFile) {
+      document.querySelector(`[data-proof-input="${proofKey}"]`)?.click()
+      return
+    }
   }
 
   setCompletingChoreId(chore.id)
   try {
-    await api(`/api/chores/${chore.id}/complete`, { method: 'POST' })
+    if (proofFile) {
+      const formData = new FormData()
+      formData.append('file', proofFile)
+      await api(`/api/chores/${chore.id}/complete`, { method: 'POST', body: formData })
+    } else {
+      await api(`/api/chores/${chore.id}/complete`, { method: 'POST' })
+    }
+    setPhotoProofFiles((prev) => {
+      const next = { ...prev }
+      delete next[proofKey]
+      return next
+    })
     await Promise.all([loadStats(), loadCalendar(), loadSpinAvailability?.()].filter(Boolean))
   } finally {
     setCompletingChoreId(null)
@@ -1360,7 +1412,7 @@ const handleHomeMarkDone = async (item) => {
 }
 ```
 
-For `photoProofTarget`, reuse the existing photo upload logic from `Chores.jsx` or the existing KidDashboard completion flow if present. The modal button still says `Mark Done`, and the upload request posts to `/api/chores/{chore.id}/complete` with `FormData` containing `file`.
+The upload request posts to `/api/chores/{chore.id}/complete` with `FormData` containing `file`.
 
 - [ ] **Step 9: Move spin into Done Today**
 
@@ -2000,7 +2052,7 @@ Verify as a kid:
 - Today card shows done count, left count, and next up.
 - `Now`, `Anytime`, `Later`, and `Bonus` sections disappear when empty.
 - Every pending chore action says `Mark Done`, including photo-required chores.
-- Photo-required `Mark Done` opens proof upload before completion.
+- Photo-required cards show `Photo needed` and `Add Photo` inline; tapping `Mark Done` without a file opens that card's file picker.
 - A completed-but-not-approved chore says `Waiting for approval`.
 - Spin wheel appears only in the Done Today reward state after required chores are complete.
 - Pet Care does not appear.
@@ -2054,7 +2106,7 @@ Spec coverage:
 - Today card contains today-only status: Task 6.
 - Empty sections disappear: Tasks 4 and 6.
 - Consistent `Mark Done` kid action, including photo proof: Tasks 4 and 6.
-- All kid completions still go through approval: Tasks 6 and 7 keep the existing `/complete` to parent approval flow.
+- All kid completions still go through approval: Tasks 6 and 7 keep the existing `/complete` to parent approval flow, with photo proof collected inline on the card when required.
 - Spin wheel integrated into Done Today: Task 6.
 - Streak mercy integrated into Streak card: Task 6.
 - Parent daypart and drag ordering: Tasks 1, 2, 4, and 5.
