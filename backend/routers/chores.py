@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, date, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from sqlalchemy import select, and_, func, text
+from sqlalchemy import select, and_, case, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,6 +31,7 @@ from backend.schemas import (
     ChoreCreate,
     ChoreUpdate,
     ChoreResponse,
+    ChoreDaypartReorderRequest,
     AssignmentResponse,
     AssignmentRuleResponse,
     CategoryCreate,
@@ -59,6 +60,14 @@ router = APIRouter(prefix="/api/chores", tags=["chores"])
 
 _CHORE_CHANGED = {"type": "data_changed", "data": {"entity": "chore"}}
 _CATEGORY_CHANGED = {"type": "data_changed", "data": {"entity": "category"}}
+
+DAYPART_SORT_SQL = case(
+    (Chore.daypart == "morning", 0),
+    (Chore.daypart == "afternoon", 1),
+    (Chore.daypart == "evening", 2),
+    (Chore.daypart == "anytime", 3),
+    else_=4,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +361,7 @@ async def list_chores(
             select(Chore)
             .where(Chore.is_active == True)
             .options(selectinload(Chore.category))
+            .order_by(DAYPART_SORT_SQL, Chore.sort_order, Chore.title)
         )
 
         if view == "active":
@@ -413,6 +423,7 @@ async def list_chores(
             )
             .options(selectinload(Chore.category))
             .distinct()
+            .order_by(DAYPART_SORT_SQL, Chore.sort_order, Chore.title)
         )
         chores = result.scalars().all()
 
@@ -464,6 +475,8 @@ async def create_chore(
         recurrence=body.recurrence,
         custom_days=body.custom_days,
         requires_photo=body.requires_photo,
+        daypart=body.daypart,
+        sort_order=body.sort_order,
         created_by=user.id,
     )
     db.add(chore)
@@ -1099,6 +1112,56 @@ async def delete_assignment_rule(
     await db.commit()
     await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=user.id)
     return None
+
+
+@router.post("/reorder-dayparts", response_model=list[ChoreResponse])
+async def reorder_chore_dayparts(
+    body: ChoreDaypartReorderRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    if not body.items:
+        return []
+
+    chore_ids = [item.chore_id for item in body.items]
+    result = await db.execute(
+        select(Chore)
+        .where(Chore.id.in_(chore_ids))
+        .where(Chore.created_by == user.id)
+        .where(Chore.is_active == True)
+        .options(selectinload(Chore.category))
+    )
+    chores = {chore.id: chore for chore in result.scalars().all()}
+
+    missing = [chore_id for chore_id in chore_ids if chore_id not in chores]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Chores not found for reorder: {', '.join(map(str, missing))}",
+        )
+
+    for item in body.items:
+        chore = chores[item.chore_id]
+        chore.daypart = item.daypart
+        chore.sort_order = item.sort_order
+
+    await db.commit()
+
+    ordered = sorted(
+        chores.values(),
+        key=lambda chore: (
+            {"morning": 0, "afternoon": 1, "evening": 2, "anytime": 3}.get(
+                getattr(chore.daypart, "value", chore.daypart),
+                4,
+            ),
+            chore.sort_order,
+            chore.title.lower(),
+        ),
+    )
+    for chore in ordered:
+        await db.refresh(chore, attribute_names=["category"])
+
+    return [ChoreResponse.model_validate(chore) for chore in ordered]
 
 
 # ---------------------------------------------------------------------------

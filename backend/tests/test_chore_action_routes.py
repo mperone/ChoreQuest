@@ -30,6 +30,11 @@ class ChoreActionRouteTests(unittest.TestCase):
 
         self.assertIn(("/api/chores/{chore_id}/assignments", "GET"), routes)
 
+    def test_parent_chore_daypart_reorder_route_is_available(self):
+        routes = route_methods()
+
+        self.assertIn(("/api/chores/reorder-dayparts", "POST"), routes)
+
 
 if __name__ == "__main__":
     unittest.main()

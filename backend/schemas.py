@@ -133,6 +133,16 @@ class ChoreResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ChoreDaypartOrderItem(BaseModel):
+    chore_id: int = Field(gt=0)
+    daypart: ChoreDaypart
+    sort_order: int = Field(ge=0)
+
+
+class ChoreDaypartReorderRequest(BaseModel):
+    items: list[ChoreDaypartOrderItem]
+
+
 class AssignmentResponse(BaseModel):
     id: int
     chore_id: int
