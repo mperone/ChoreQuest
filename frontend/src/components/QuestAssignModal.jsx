@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle } from '../utils/questThemeText';
+import { bulkToggleState } from '../utils/bulkToggleState';
 import {
   DAY_NAMES,
   LAST_DAY_OF_MONTH,
@@ -234,8 +235,7 @@ export default function QuestAssignModal({
 
   // Toggle photo proof for all selected kids
   const togglePhotoAll = () => {
-    const anyHasPhoto = selectedKids.some(([, c]) => c.requires_photo);
-    const newValue = !anyHasPhoto;
+    const newValue = bulkToggleState(Object.values(kidConfigs), 'requires_photo').nextValue;
     setKidConfigs((prev) => {
       const next = { ...prev };
       for (const [kidId, config] of Object.entries(next)) {
@@ -265,8 +265,7 @@ export default function QuestAssignModal({
   };
 
   const toggleOptionalAll = () => {
-    const anyOptional = selectedKids.some(([, c]) => c.is_optional);
-    const newValue = !anyOptional;
+    const newValue = bulkToggleState(Object.values(kidConfigs), 'is_optional').nextValue;
     setKidConfigs((prev) => {
       const next = { ...prev };
       for (const [kidId, config] of Object.entries(next)) {
@@ -330,10 +329,8 @@ export default function QuestAssignModal({
 
   if (!chore) return null;
 
-  const allSelectedHavePhoto = selectedCount > 0 && selectedKids.every(([, c]) => c.requires_photo);
-  const someSelectedHavePhoto = selectedCount > 0 && selectedKids.some(([, c]) => c.requires_photo);
-  const allSelectedOptional = selectedCount > 0 && selectedKids.every(([, c]) => c.is_optional);
-  const someSelectedOptional = selectedCount > 0 && selectedKids.some(([, c]) => c.is_optional);
+  const photoBulkState = bulkToggleState(Object.values(kidConfigs), 'requires_photo');
+  const optionalBulkState = bulkToggleState(Object.values(kidConfigs), 'is_optional');
   const scheduleSummary = formatScheduleSummary({
     schedule_type: scheduleType,
     start_date: scheduleStartDate,
@@ -614,30 +611,34 @@ export default function QuestAssignModal({
               <button
                 type="button"
                 onClick={togglePhotoAll}
+                aria-pressed={photoBulkState.all}
                 className={`relative w-12 h-6 rounded-full border transition-colors ${
-                  allSelectedHavePhoto
+                  photoBulkState.all
                     ? 'bg-accent/20 border-accent'
-                    : someSelectedHavePhoto
-                    ? 'bg-accent/10 border-accent/50'
+                    : photoBulkState.mixed
+                    ? 'bg-surface-raised border-accent/50'
                     : 'bg-navy-light border-border'
                 }`}
               >
                 <div
                   className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
-                    allSelectedHavePhoto
+                    photoBulkState.all
                       ? 'left-6 bg-accent'
-                      : someSelectedHavePhoto
-                      ? 'left-6 bg-accent/50'
+                      : photoBulkState.mixed
+                      ? 'left-[14px] bg-accent/70'
                       : 'left-0.5 bg-muted'
                   }`}
                 />
+                {photoBulkState.mixed && (
+                  <span className="absolute left-[18px] top-[10px] h-0.5 w-2 rounded-full bg-navy" />
+                )}
               </button>
             </div>
             <p className="text-muted text-xs mt-1">
-              {allSelectedHavePhoto
+              {photoBulkState.all
                 ? 'All heroes must attach a photo when completing this quest.'
-                : someSelectedHavePhoto
-                ? 'Some heroes require photo proof. Expand individual settings to adjust.'
+                : photoBulkState.mixed
+                ? 'Some heroes require photo proof. Tap to require it for everyone.'
                 : 'Heroes can complete this quest without attaching a photo.'}
             </p>
           </div>
@@ -654,30 +655,34 @@ export default function QuestAssignModal({
               <button
                 type="button"
                 onClick={toggleOptionalAll}
+                aria-pressed={optionalBulkState.all}
                 className={`relative w-12 h-6 rounded-full border transition-colors ${
-                  allSelectedOptional
+                  optionalBulkState.all
                     ? 'bg-gold/20 border-gold'
-                    : someSelectedOptional
-                    ? 'bg-gold/10 border-gold/50'
+                    : optionalBulkState.mixed
+                    ? 'bg-surface-raised border-gold/50'
                     : 'bg-navy-light border-border'
                 }`}
               >
                 <div
                   className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
-                    allSelectedOptional
+                    optionalBulkState.all
                       ? 'left-6 bg-gold'
-                      : someSelectedOptional
-                      ? 'left-6 bg-gold/60'
+                      : optionalBulkState.mixed
+                      ? 'left-[14px] bg-gold/70'
                       : 'left-0.5 bg-muted'
                   }`}
                 />
+                {optionalBulkState.mixed && (
+                  <span className="absolute left-[18px] top-[10px] h-0.5 w-2 rounded-full bg-navy" />
+                )}
               </button>
             </div>
             <p className="text-muted text-xs mt-1">
-              {allSelectedOptional
+              {optionalBulkState.all
                 ? 'All selected heroes can complete this for extra XP, but it will not affect streaks.'
-                : someSelectedOptional
-                ? 'Some selected heroes have this as a bonus quest. Expand individual settings to adjust.'
+                : optionalBulkState.mixed
+                ? 'Some selected heroes have this as a bonus quest. Tap to make it bonus for everyone.'
                 : 'This quest is required for streaks and daily progress.'}
             </p>
           </div>
