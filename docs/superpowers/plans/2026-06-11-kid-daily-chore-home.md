@@ -64,6 +64,7 @@ Those files are already dirty in the local checkout and are unrelated to this fe
 - `Anytime` means required chores whose chore daypart is `anytime`.
 - `Later` means required chores assigned to a later daypart on the same day.
 - `Bonus` means optional chores, independent of daypart.
+- `Done Today`, `Left Today`, and the spin-wheel reward gate count every required chore assigned for today, including `Later`. Daypart sections change timing emphasis, not whether a chore counts toward today's required total.
 - Spin the wheel lives in the Done Today reward state after required chores are complete.
 - Streak mercy/save status lives inside the Streak card, with a compact notice only when a save was used.
 - Parents set daypart on the chore and order chores through drag-and-drop grouped by daypart. There is no visible numeric sort field.
@@ -628,9 +629,9 @@ test('groups today chores into now, anytime, later, and bonus', () => {
   assert.deepEqual(groups.anytime.items.map((entry) => entry.title), ['Water plants'])
   assert.deepEqual(groups.later.items.map((entry) => entry.title), ['Read'])
   assert.deepEqual(groups.bonus.items.map((entry) => entry.title), ['Extra help'])
-  assert.equal(groups.requiredTotal, 3)
+  assert.equal(groups.requiredTotal, 4)
   assert.equal(groups.requiredDone, 1)
-  assert.equal(groups.requiredLeft, 2)
+  assert.equal(groups.requiredLeft, 3)
 })
 
 test('hides empty daily groups and sorts by daypart order then sort order', () => {
