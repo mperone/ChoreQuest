@@ -51,6 +51,7 @@ from backend.services.rotation import get_rotation_kid_for_day
 from backend.services.assignment_cleanup import pending_assignment_is_stale
 from backend.services.optional_quests import assignment_completion_advances_streak
 from backend.services.streaks import gap_preserves_streak
+from backend.services.daytime import app_today
 
 logger = logging.getLogger(__name__)
 
@@ -468,7 +469,7 @@ async def create_chore(
     db.add(chore)
     await db.flush()
 
-    today = date.today()
+    today = await app_today(db)
     for uid in body.assigned_user_ids:
         u_result = await db.execute(select(User).where(User.id == uid))
         if u_result.scalar_one_or_none() is None:
@@ -488,7 +489,7 @@ async def cleanup_all_stale(
     user: User = Depends(require_parent),
 ):
     """Repair planned assignment rows while preserving history and exclusions."""
-    today = date.today()
+    today = await app_today(db)
 
     pending_result = await db.execute(
         select(ChoreAssignment)
@@ -583,7 +584,7 @@ async def get_chore_assignments(
 ):
     await _get_chore_or_404(db, chore_id)
 
-    today = date.today()
+    today = await app_today(db)
     start_date = today - timedelta(days=past_days)
     end_date = today + timedelta(days=future_days)
 
@@ -635,7 +636,7 @@ async def update_chore(
 
     newly_assigned = []
     if assigned_user_ids is not None:
-        today = date.today()
+        today = await app_today(db)
         for uid in assigned_user_ids:
             existing = await db.execute(
                 select(ChoreAssignment).where(
@@ -725,7 +726,7 @@ async def assign_chore(
 ):
     chore = await _get_chore_or_404(db, chore_id)
 
-    today = date.today()
+    today = await app_today(db)
     assignments = [
         _schedule_from_assignment_item(item, today)
         for item in body.assignments
@@ -970,7 +971,7 @@ async def debug_chore(
     )
     rules = rules_result.scalars().all()
 
-    today = date.today()
+    today = await app_today(db)
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
 
@@ -1063,7 +1064,7 @@ async def update_assignment_rule(
         setattr(rule, field, value)
 
     if "is_optional" in update_data:
-        today = date.today()
+        today = await app_today(db)
         pending_result = await db.execute(
             select(ChoreAssignment).where(
                 ChoreAssignment.chore_id == rule.chore_id,
@@ -1111,7 +1112,7 @@ async def complete_chore(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    today = date.today()
+    today = await app_today(db)
     now = datetime.now(timezone.utc)
 
     result = await db.execute(
@@ -1268,7 +1269,7 @@ async def _approve_assignment(
         )
 
     now = datetime.now(timezone.utc)
-    today = date.today()
+    today = await app_today(db)
     chore = assignment.chore
     base_points = chore.points
 
@@ -1505,11 +1506,12 @@ async def _load_today_assignment_for_chore_action(
     statuses: list[AssignmentStatus],
     not_found_detail: str,
 ) -> ChoreAssignment:
+    today = await app_today(db)
     result = await db.execute(
         select(ChoreAssignment)
         .where(
             ChoreAssignment.chore_id == chore_id,
-            ChoreAssignment.date == date.today(),
+            ChoreAssignment.date == today,
             ChoreAssignment.status.in_(statuses),
         )
         .options(

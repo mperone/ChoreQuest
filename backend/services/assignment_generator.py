@@ -25,6 +25,7 @@ from backend.services.rotation import (
     should_advance_rotation,
     advance_rotation,
 )
+from backend.services.daytime import app_today
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,8 @@ async def auto_generate_week_assignments(
     if not week_dates:
         return
 
+    reference_day = await app_today(db)
+
     # Filter out vacation days from week generation
     from backend.routers.vacation import is_vacation_day
     active_dates = []
@@ -119,7 +122,7 @@ async def auto_generate_week_assignments(
         if rules:
             rotation = await _load_rotation(db, chore.id)
             await _generate_from_rules(
-                db, chore, rules, rotation, week_dates, exclusion_set,
+                db, chore, rules, rotation, week_dates, exclusion_set, reference_day,
             )
         else:
             await _generate_legacy(db, chore, week_dates, exclusion_set)
@@ -369,6 +372,7 @@ async def _generate_from_rules(
     rotation: ChoreRotation | None,
     week_dates: list[date],
     exclusion_set: set[tuple[int, int, date]],
+    fallback_reference_day: date,
 ) -> None:
     """Generate week assignments using per-kid assignment rules."""
     active_weekdays = _collect_active_weekdays(rules, chore) if rotation else None
@@ -380,7 +384,7 @@ async def _generate_from_rules(
         lr = rotation.last_rotated
         reference_day = lr.date() if hasattr(lr, "date") else lr
     else:
-        reference_day = date.today()
+        reference_day = fallback_reference_day
 
     await _remove_stale_pending_assignments_for_week(
         db,

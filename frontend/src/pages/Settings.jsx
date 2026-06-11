@@ -9,8 +9,16 @@ import {
   Loader2,
   Award,
   Sparkles,
+  Globe2,
 } from 'lucide-react';
 import VacationSettings from '../components/VacationSettings';
+
+const TIMEZONE_OPTIONS = [
+  { value: 'America/Chicago', label: 'America/Chicago' },
+  { value: 'Europe/Belgrade', label: 'Europe/Belgrade' },
+  { value: 'Europe/London', label: 'Europe/London' },
+  { value: 'UTC', label: 'UTC' },
+];
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -145,6 +153,11 @@ export default function Settings() {
     </div>
   );
 
+  const timezoneValue = settings?.daily_rollover_timezone || 'America/Chicago';
+  const timezoneOptions = TIMEZONE_OPTIONS.some((option) => option.value === timezoneValue)
+    ? TIMEZONE_OPTIONS
+    : [{ value: timezoneValue, label: timezoneValue }, ...TIMEZONE_OPTIONS];
+
   return (
     <div className="w-full max-w-2xl mx-auto overflow-hidden">
       <div className="flex items-center gap-3 mb-6">
@@ -200,25 +213,26 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Daily reset hour */}
+          {/* Daily rollover timezone */}
           <div className="game-panel p-4">
-            <h2 className="text-cream text-sm font-semibold mb-3">
-              Daily Reset Hour
+            <h2 className="text-cream text-sm font-semibold mb-3 flex items-center gap-2">
+              <Globe2 size={16} className="text-accent" />
+              Daily Rollover Timezone
             </h2>
             <p className="text-muted text-xs mb-3">
-              Hour of day (0-23) when daily quests reset.
+              Kids roll to the next app day at midnight in this timezone.
             </p>
-            <input
-              type="number"
-              min={0}
-              max={23}
-              value={settings.daily_reset_hour ?? 0}
-              onChange={(e) => {
-                const val = Math.min(23, Math.max(0, parseInt(e.target.value, 10) || 0));
-                updateSetting('daily_reset_hour', val);
-              }}
-              className="field-input max-w-[120px]"
-            />
+            <select
+              value={timezoneValue}
+              onChange={(e) => updateSetting('daily_rollover_timezone', e.target.value)}
+              className="field-input max-w-xs"
+            >
+              {timezoneOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="game-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

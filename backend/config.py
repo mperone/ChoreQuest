@@ -16,8 +16,7 @@ class Settings(BaseSettings):
     REGISTER_RATE_LIMIT_MAX: int = 5
     CORS_ORIGINS: str = ""
     MAX_UPLOAD_SIZE_MB: int = 5
-    DAILY_RESET_HOUR: int = 0
-    TZ: str = "Europe/London"
+    TZ: str = "America/Chicago"
     VAPID_PRIVATE_KEY: str = ""
     VAPID_PUBLIC_KEY: str = ""
     VAPID_CLAIM_EMAIL: str = "mailto:admin@example.com"

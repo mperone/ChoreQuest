@@ -23,6 +23,7 @@ from backend.dependencies import get_current_user, require_parent
 from backend.websocket_manager import ws_manager
 from backend.services.assignment_generator import auto_generate_week_assignments
 from backend.services.calendar_windows import monday_week_start, monday_week_starts_to_generate
+from backend.services.daytime import app_today
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -44,7 +45,7 @@ async def get_weekly_calendar(
     Returns assignments grouped by day.
     """
     if week_start is None:
-        today = date.today()
+        today = await app_today(db)
         week_start = today - timedelta(days=today.weekday())
     elif week_start.weekday() != 0:
         raise HTTPException(status_code=400, detail="week_start must be a Monday")
@@ -136,7 +137,7 @@ async def get_my_calendar_assignments(
     if current_user.role != UserRole.kid:
         raise HTTPException(status_code=403, detail="Only kids can use this endpoint")
 
-    today = date.today()
+    today = await app_today(db)
     start_date = today - timedelta(days=past_days)
     end_date = today + timedelta(days=future_days)
 

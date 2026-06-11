@@ -7,6 +7,7 @@ from backend.models import (
     ChoreAssignmentRule, Recurrence,
     ScheduleType, AssignmentStatus, AvatarItem, AvatarItemRarity, AvatarUnlockMethod,
 )
+from backend.services.daytime import app_today
 
 DEFAULT_CATEGORIES = [
     {"name": "Kitchen", "icon": "cooking-pot", "colour": "#ff6b6b"},
@@ -52,7 +53,7 @@ DEFAULT_ACHIEVEMENTS = [
 ]
 
 DEFAULT_SETTINGS = {
-    "daily_reset_hour": "0",
+    "daily_rollover_timezone": "America/Chicago",
     "leaderboard_enabled": "true",
     "spin_wheel_enabled": "true",
     "chore_trading_enabled": "true",
@@ -221,7 +222,7 @@ async def seed_database(db: AsyncSession):
     # Migrate existing chores to assignment rules (one-time migration)
     rule_count = await db.execute(select(func.count()).select_from(ChoreAssignmentRule))
     if rule_count.scalar() == 0:
-        today = date.today()
+        today = await app_today(db)
         chores_result = await db.execute(
             select(Chore).where(Chore.is_active == True)
         )

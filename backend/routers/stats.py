@@ -24,6 +24,7 @@ from backend.services.stats_helpers import completion_rate
 from backend.services.ranks import get_rank
 from backend.services.pet_leveling import get_pet_level
 from backend.services.streaks import gap_preserves_streak
+from backend.services.daytime import app_today
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -39,7 +40,7 @@ async def _effective_streak(db: AsyncSession, user: User) -> int:
     if user.current_streak <= 0 or user.last_streak_date is None:
         return 0
 
-    today = date.today()
+    today = await app_today(db)
     if user.last_streak_date >= today:
         return user.current_streak
 
@@ -65,7 +66,8 @@ async def get_my_stats(
 ):
     """Current user stats."""
     achievements_count = await _count_achievements(db, current_user.id)
-    thirty_days_ago = date.today() - timedelta(days=30)
+    today = await app_today(db)
+    thirty_days_ago = today - timedelta(days=30)
     total_30d, completed_30d, rate_30d = await completion_rate(
         db, current_user.id, thirty_days_ago,
     )
@@ -83,7 +85,7 @@ async def get_my_stats(
         pet_info = None
 
     # Streak freeze: available once per calendar month
-    today = date.today()
+    today = await app_today(db)
     current_month = today.month + today.year * 12
     streak_freeze_available = (current_user.streak_freeze_month or 0) != current_month
 
@@ -140,7 +142,7 @@ async def get_kid_detail(
     if not kid:
         raise HTTPException(status_code=404, detail="Kid not found")
 
-    today = date.today()
+    today = await app_today(db)
     monday = today - timedelta(days=today.weekday())
     await auto_generate_week_assignments(db, monday)
 
@@ -178,7 +180,7 @@ async def get_family_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Overview of all kids. Parent+ only."""
-    today = date.today()
+    today = await app_today(db)
     monday = today - timedelta(days=today.weekday())
     await auto_generate_week_assignments(db, monday)
 
@@ -219,7 +221,7 @@ async def get_leaderboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Weekly leaderboard. Sum positive PointTransactions for the current week."""
-    today = date.today()
+    today = await app_today(db)
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
 
@@ -347,7 +349,7 @@ async def get_user_stats(
 
     achievements_count = await _count_achievements(db, user.id)
 
-    today = date.today()
+    today = await app_today(db)
     seven_days_ago = today - timedelta(days=7)
     thirty_days_ago = today - timedelta(days=30)
 
@@ -377,7 +379,7 @@ async def get_completion_history(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="User not found")
 
-    today = date.today()
+    today = await app_today(db)
     seven_days_ago = today - timedelta(days=7)
     thirty_days_ago = today - timedelta(days=30)
 

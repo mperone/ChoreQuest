@@ -6,6 +6,7 @@ from backend.models import (
     PointTransaction, PointType, RewardRedemption, Notification, NotificationType,
 )
 from backend.websocket_manager import ws_manager
+from backend.services.daytime import app_today
 
 
 async def check_achievements(db: AsyncSession, user: User):
@@ -72,7 +73,7 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
 
     elif ctype == "all_daily_before_time":
         hour = criteria["hour"]
-        today = date.today()
+        today = await app_today(db)
         result = await db.execute(
             select(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,
@@ -92,7 +93,7 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
         return True
 
     elif ctype == "all_daily_completed":
-        today = date.today()
+        today = await app_today(db)
         result = await db.execute(
             select(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,

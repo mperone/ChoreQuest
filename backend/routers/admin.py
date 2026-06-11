@@ -23,6 +23,11 @@ from backend.schemas import (
 )
 from backend.auth import hash_password
 from backend.dependencies import require_admin, require_parent, get_current_user
+from backend.services.daytime import (
+    DAILY_ROLLOVER_TIMEZONE_KEY,
+    DEFAULT_DAILY_ROLLOVER_TIMEZONE,
+    normalize_timezone_name,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -288,7 +293,13 @@ async def get_settings(
     """Get all application settings as a key-value dict."""
     result = await db.execute(select(AppSetting))
     settings_list = result.scalars().all()
-    return {s.key: s.value for s in settings_list}
+    values = {s.key: s.value for s in settings_list}
+    values.pop("daily_reset_hour", None)
+    values.setdefault(DAILY_ROLLOVER_TIMEZONE_KEY, DEFAULT_DAILY_ROLLOVER_TIMEZONE)
+    values[DAILY_ROLLOVER_TIMEZONE_KEY] = normalize_timezone_name(
+        values.get(DAILY_ROLLOVER_TIMEZONE_KEY)
+    )
+    return values
 
 
 # ---------- GET /settings/features ----------
@@ -298,15 +309,28 @@ async def get_feature_settings(
     _user: User = Depends(get_current_user),
 ):
     """Get feature toggle settings (accessible by any authenticated user)."""
-    feature_keys = ["leaderboard_enabled", "spin_wheel_enabled", "chore_trading_enabled"]
+    feature_keys = [
+        "leaderboard_enabled",
+        "spin_wheel_enabled",
+        "chore_trading_enabled",
+        DAILY_ROLLOVER_TIMEZONE_KEY,
+    ]
     result = await db.execute(
         select(AppSetting).where(AppSetting.key.in_(feature_keys))
     )
     settings_list = result.scalars().all()
     # Return with defaults for any missing keys
-    features = {k: "true" for k in feature_keys}
+    features = {
+        "leaderboard_enabled": "true",
+        "spin_wheel_enabled": "true",
+        "chore_trading_enabled": "true",
+        DAILY_ROLLOVER_TIMEZONE_KEY: DEFAULT_DAILY_ROLLOVER_TIMEZONE,
+    }
     for s in settings_list:
         features[s.key] = s.value
+    features[DAILY_ROLLOVER_TIMEZONE_KEY] = normalize_timezone_name(
+        features.get(DAILY_ROLLOVER_TIMEZONE_KEY)
+    )
     return features
 
 
@@ -319,6 +343,8 @@ async def update_settings(
 ):
     """Update application settings. Body: {"settings": {"key": "value"}}."""
     for key, value in body.settings.items():
+        if key == DAILY_ROLLOVER_TIMEZONE_KEY:
+            value = normalize_timezone_name(value)
         result = await db.execute(
             select(AppSetting).where(AppSetting.key == key)
         )

@@ -1,6 +1,5 @@
 """Pet interaction endpoints — feed, pet, play for small XP bonuses."""
 import json
-from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
@@ -16,6 +15,7 @@ from backend.services.pet_leveling import (
     migrate_pet_xp,
     set_current_pet_xp,
 )
+from backend.services.daytime import app_today
 
 router = APIRouter(prefix="/api/pets", tags=["pets"])
 
@@ -41,7 +41,7 @@ async def pet_interact(
         raise HTTPException(status_code=400, detail="No pet equipped")
 
     # ── Daily interaction limit ──
-    today_str = date.today().isoformat()
+    today_str = (await app_today(db)).isoformat()
     interactions = config.get("pet_interactions", {})
     if interactions.get("date") != today_str:
         interactions = {"date": today_str, "count": 0, "actions": []}

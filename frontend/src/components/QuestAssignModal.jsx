@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
+import { useSettings } from '../hooks/useSettings';
 import { themedTitle } from '../utils/questThemeText';
+import { todayISOInTimeZone } from '../utils/daytime';
 import { bulkToggleState } from '../utils/bulkToggleState';
 import {
   DAY_NAMES,
@@ -14,7 +16,6 @@ import {
   normalizeScheduleDays,
   normalizeScheduleWeekdays,
   scheduleShowsPreview,
-  todayISO,
 } from '../utils/scheduleDays';
 import Modal from './Modal';
 import AvatarDisplay from './AvatarDisplay';
@@ -65,6 +66,8 @@ export default function QuestAssignModal({
   kids,
 }) {
   const { colorTheme } = useTheme();
+  const { daily_rollover_timezone } = useSettings();
+  const familyToday = todayISOInTimeZone(daily_rollover_timezone);
 
   // Per-kid: { [kidId]: { selected, requires_photo, is_optional } }
   const [kidConfigs, setKidConfigs] = useState({});
@@ -72,9 +75,9 @@ export default function QuestAssignModal({
 
   // Shared schedule (applies to all selected kids)
   const [scheduleType, setScheduleType] = useState('once');
-  const [scheduleStartDate, setScheduleStartDate] = useState(todayISO());
+  const [scheduleStartDate, setScheduleStartDate] = useState(familyToday);
   const [scheduleWeekdays, setScheduleWeekdays] = useState([]);
-  const [scheduleMonthDay, setScheduleMonthDay] = useState(monthDayFromISODate(todayISO()));
+  const [scheduleMonthDay, setScheduleMonthDay] = useState(monthDayFromISODate(familyToday));
 
   // Rotation (2+ kids only)
   const [rotationEnabled, setRotationEnabled] = useState(false);
@@ -110,7 +113,7 @@ export default function QuestAssignModal({
         }
         setKidConfigs(configs);
 
-        const today = todayISO();
+        const today = familyToday;
 
         // Derive shared schedule from first active rule
         const firstActive = rulesList.find((r) => r.is_active);
@@ -161,9 +164,9 @@ export default function QuestAssignModal({
         setKidConfigs(configs);
         setHadExistingAssignments(false);
         setScheduleType('once');
-        setScheduleStartDate(todayISO());
+        setScheduleStartDate(familyToday);
         setScheduleWeekdays([]);
-        setScheduleMonthDay(monthDayFromISODate(todayISO()));
+        setScheduleMonthDay(monthDayFromISODate(familyToday));
       });
 
     // Fetch existing rotation
@@ -187,7 +190,7 @@ export default function QuestAssignModal({
       });
 
     setError('');
-  }, [isOpen, chore, kids]);
+  }, [isOpen, chore, kids, familyToday]);
 
   const selectedKids = Object.entries(kidConfigs).filter(([, c]) => c.selected);
   const selectedCount = selectedKids.length;
@@ -252,7 +255,7 @@ export default function QuestAssignModal({
 
   // Compute the canonical schedule plus legacy compatibility fields.
   const getEffectiveSchedule = () => {
-    const startDate = scheduleStartDate || todayISO();
+    const startDate = scheduleStartDate || familyToday;
     const weekdays = normalizeScheduleWeekdays(scheduleType, startDate, scheduleWeekdays);
     const monthDay = scheduleType === 'monthly'
       ? normalizeMonthDay(scheduleMonthDay, startDate)

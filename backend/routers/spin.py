@@ -19,6 +19,7 @@ from backend.dependencies import get_current_user
 from backend.achievements import check_achievements
 from backend.websocket_manager import ws_manager
 from backend.services.pet_leveling import award_pet_xp_db
+from backend.services.daytime import app_today
 
 router = APIRouter(prefix="/api/spin", tags=["spin"])
 
@@ -42,7 +43,7 @@ async def _can_spin_today(db: AsyncSession, user: User) -> tuple[bool, int | Non
 
     Returns (can_spin, last_result_points_or_none, reason_or_none).
     """
-    today = date.today()
+    today = await app_today(db)
 
     # Get last spin result for display
     last_result: int | None = None
@@ -123,7 +124,7 @@ async def execute_spin(
 
     # Pick from the wheel segments so the frontend animation matches
     points_won = random.choice(WHEEL_VALUES)
-    today = date.today()
+    today = await app_today(db)
 
     # Create spin result
     spin_result = SpinResult(

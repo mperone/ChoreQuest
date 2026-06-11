@@ -15,6 +15,7 @@ import {
   Send,
 } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
+import { useSettings } from '../hooks/useSettings';
 import { themedTitle } from '../utils/questThemeText';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -25,12 +26,13 @@ import {
   assignmentActionState,
   collectPendingApprovals,
 } from '../utils/assignmentActions';
-import { toISO } from '../utils/calendarWeek';
+import { todayISOInTimeZone } from '../utils/daytime';
 
 export default function ParentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { colorTheme } = useTheme();
+  const { daily_rollover_timezone } = useSettings();
 
   const [familyStats, setFamilyStats] = useState([]);
   const [approvalInboxItems, setApprovalInboxItems] = useState([]);
@@ -177,7 +179,7 @@ export default function ParentDashboard() {
     );
   }
 
-  const today = toISO(new Date());
+  const today = todayISOInTimeZone(daily_rollover_timezone);
   const hasPendingItems = approvalInboxItems.length > 0;
 
   return (

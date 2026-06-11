@@ -8,6 +8,7 @@ from backend.database import get_db
 from backend.models import User, VacationPeriod
 from backend.schemas import VacationCreate, VacationResponse
 from backend.dependencies import require_parent
+from backend.services.daytime import app_today
 
 router = APIRouter(prefix="/api/vacation", tags=["vacation"])
 
@@ -35,7 +36,7 @@ async def create_vacation(
     """Create a vacation/blackout period. Parent+ only."""
     if body.end_date < body.start_date:
         raise HTTPException(status_code=400, detail="End date must be after start date")
-    if body.end_date < date.today():
+    if body.end_date < await app_today(db):
         raise HTTPException(status_code=400, detail="Cannot create vacation in the past")
 
     vacation = VacationPeriod(

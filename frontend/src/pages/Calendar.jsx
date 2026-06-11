@@ -9,8 +9,8 @@ import {
   addDays,
   backendMondayWeekStartsForSundayWeek,
   sundayWeekStart,
-  toISO,
 } from '../utils/calendarWeek';
+import { todayISOInTimeZone } from '../utils/daytime';
 import {
   groupAssignmentsByChore,
   groupAssignmentsByKid,
@@ -33,9 +33,7 @@ import {
 
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function statusStyle(assignment, dayStr) {
-  const today = toISO(new Date());
-
+function statusStyle(assignment, dayStr, today) {
   if (assignment.status === 'verified') {
     return {
       border: 'border-emerald',
@@ -211,11 +209,12 @@ function ParentCalendarGroup({
 export default function Calendar() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { chore_trading_enabled } = useSettings();
+  const { chore_trading_enabled, daily_rollover_timezone } = useSettings();
   const { colorTheme } = useTheme();
   const isKid = user?.role === 'kid';
+  const familyToday = todayISOInTimeZone(daily_rollover_timezone);
 
-  const [startDate, setStartDate] = useState(() => sundayWeekStart(toISO(new Date())));
+  const [startDate, setStartDate] = useState(() => sundayWeekStart(familyToday));
   const [assignments, setAssignments] = useState({});
   const [parentCalendarView, setParentCalendarView] = useState('quest');
   const [loading, setLoading] = useState(true);
@@ -264,6 +263,10 @@ export default function Calendar() {
     fetchCalendar();
   }, [fetchCalendar]);
 
+  useEffect(() => {
+    setStartDate(sundayWeekStart(familyToday));
+  }, [familyToday]);
+
   // Live updates via WebSocket
   useEffect(() => {
     const handler = () => { fetchCalendar(); };
@@ -273,7 +276,7 @@ export default function Calendar() {
 
   const prevWeek = () => setStartDate(addDays(startDate, -7));
   const nextWeek = () => setStartDate(addDays(startDate, 7));
-  const goToday = () => setStartDate(sundayWeekStart(toISO(new Date())));
+  const goToday = () => setStartDate(sundayWeekStart(familyToday));
 
   const openTrade = async (assignment) => {
     setTradeAssignment(assignment);
@@ -337,7 +340,7 @@ export default function Calendar() {
   };
 
   const endDate = addDays(startDate, 6);
-  const today = toISO(new Date());
+  const today = familyToday;
   const currentWeekStart = sundayWeekStart(today);
   const isAtCurrentWeek = startDate === currentWeekStart;
   const formatShortDate = (str) => {
@@ -474,7 +477,7 @@ export default function Calendar() {
                   )}
                   {isKid
                     ? dayAssignments.map((a) => {
-                        const style = statusStyle(a, dayStr);
+                        const style = statusStyle(a, dayStr, today);
                         return (
                           <div
                             key={a.id}

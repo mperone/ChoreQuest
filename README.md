@@ -66,7 +66,7 @@ Create a `.env` file (or pass env vars directly):
 
 ```env
 SECRET_KEY=your-secret-key-min-16-chars
-TZ=Europe/London
+TZ=America/Chicago
 ```
 
 Then start:
@@ -215,14 +215,13 @@ Notifications that arrive even when the app is closed — just like a native app
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SECRET_KEY` | *required* | JWT signing key, minimum 16 characters |
-| `TZ` | `Europe/London` | Container timezone |
+| `TZ` | `America/Chicago` | Container timezone and fallback for the first daily rollover timezone setting |
 | `REGISTRATION_ENABLED` | `false` | Allow public registration (no invite code needed) |
 | `DATABASE_URL` | `sqlite+aiosqlite:////app/data/chores_os.db` | Database path |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token lifetime |
 | `COOKIE_SECURE` | `false` | Set `true` behind HTTPS |
 | `CORS_ORIGINS` | *(empty)* | Comma-separated allowed origins for cross-origin requests |
-| `DAILY_RESET_HOUR` | `0` | UTC hour for the daily assignment reset |
 | `MAX_UPLOAD_SIZE_MB` | `5` | Photo upload size limit |
 | `LOGIN_RATE_LIMIT_MAX` | `10` | Max login attempts per 300s window |
 | `PIN_RATE_LIMIT_MAX` | `5` | Max PIN login attempts per 900s window |
@@ -230,6 +229,8 @@ Notifications that arrive even when the app is closed — just like a native app
 | `VAPID_PUBLIC_KEY` | *(empty)* | VAPID public key for web push notifications |
 | `VAPID_PRIVATE_KEY` | *(empty)* | VAPID private key for web push notifications |
 | `VAPID_CLAIM_EMAIL` | `mailto:admin@example.com` | Contact email included in push requests |
+
+Daily chore rollover is configured in **Family Settings** with the `Daily Rollover Timezone` setting. Use an IANA timezone such as `America/Chicago` or `Europe/Belgrade`; daylight saving time is handled automatically.
 
 ### First run
 

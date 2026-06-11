@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
-import { toISO } from '../utils/calendarWeek';
+import { useSettings } from '../hooks/useSettings';
+import { todayISOInTimeZone } from '../utils/daytime';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
 import { formatScheduleSummary } from '../utils/scheduleDays';
 import {
@@ -113,6 +114,7 @@ export default function ChoreDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const { colorTheme } = useTheme();
+  const { daily_rollover_timezone } = useSettings();
   const isParent = user?.role === 'parent' || user?.role === 'admin';
   const isKid = user?.role === 'kid';
 
@@ -258,7 +260,7 @@ export default function ChoreDetail() {
 
   if (!chore) return null;
 
-  const today = toISO(new Date());
+  const today = todayISOInTimeZone(daily_rollover_timezone);
   const { today: todayAssignments, upcoming, recent } = splitQuestAssignments(assignments, today);
   const todayAssignment = todayAssignments.find((a) => a.user_id === user?.id) || todayAssignments[0];
   const hasPendingToday = isKid && todayAssignment && assignmentActionState(todayAssignment).canSkip;

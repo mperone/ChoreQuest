@@ -12,6 +12,7 @@ from backend.models import (
     PointTransaction,
 )
 from backend.dependencies import get_current_user
+from backend.services.daytime import app_today
 
 router = APIRouter(prefix="/api/progress", tags=["progress"])
 
@@ -22,7 +23,7 @@ async def get_progress(
     db: AsyncSession = Depends(get_db),
 ):
     """Return 30-day daily chart data for the current user (or all kids for parents)."""
-    today = date.today()
+    today = await app_today(db)
     start = today - timedelta(days=29)
 
     if current_user.role == UserRole.kid:

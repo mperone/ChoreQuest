@@ -21,6 +21,11 @@ from backend.app_version import APP_COMPAT_VERSION
 from backend.services.assignment_generator import generate_daily_assignments
 from backend.services.push_hook import install_push_hooks
 from backend.services.streaks import gap_preserves_streak
+from backend.services.daytime import (
+    app_today,
+    get_daily_rollover_timezone,
+    next_local_midnight_utc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,24 +71,32 @@ async def reset_stale_streaks(db, today: date):
 
 
 async def daily_reset_task():
-    """Background task that runs once per day at the configured hour.
+    """Background task that runs once per day at local family midnight.
 
     Responsibilities:
     - Generate today's recurring chore assignments (with rotation advancement)
     - Clean up expired refresh tokens
     """
+    max_sleep_seconds = 60 * 60
     while True:
+        try:
+            async with async_session() as db:
+                timezone_name = await get_daily_rollover_timezone(db)
+        except Exception:
+            logger.exception("Could not load daily rollover timezone")
+            timezone_name = settings.TZ
+
         now = datetime.now(timezone.utc)
-        target_hour = settings.DAILY_RESET_HOUR
-        next_run = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
-        if now >= next_run:
-            next_run += timedelta(days=1)
-        wait_seconds = (next_run - now).total_seconds()
+        next_run = next_local_midnight_utc(timezone_name, now)
+        wait_seconds = max(0, (next_run - now).total_seconds())
+        if wait_seconds > max_sleep_seconds:
+            await asyncio.sleep(max_sleep_seconds)
+            continue
         await asyncio.sleep(wait_seconds)
 
         try:
             async with async_session() as db:
-                today = date.today()
+                today = await app_today(db)
 
                 await generate_daily_assignments(db, today)
 

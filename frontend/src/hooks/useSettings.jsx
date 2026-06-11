@@ -5,6 +5,7 @@ const SettingsContext = createContext({
   leaderboard_enabled: true,
   spin_wheel_enabled: true,
   chore_trading_enabled: true,
+  daily_rollover_timezone: 'America/Chicago',
 });
 
 export function SettingsProvider({ children }) {
@@ -12,6 +13,7 @@ export function SettingsProvider({ children }) {
     leaderboard_enabled: true,
     spin_wheel_enabled: true,
     chore_trading_enabled: true,
+    daily_rollover_timezone: 'America/Chicago',
   });
 
   const fetchFeatures = useCallback(async () => {
@@ -21,6 +23,7 @@ export function SettingsProvider({ children }) {
         leaderboard_enabled: data.leaderboard_enabled !== 'false',
         spin_wheel_enabled: data.spin_wheel_enabled !== 'false',
         chore_trading_enabled: data.chore_trading_enabled !== 'false',
+        daily_rollover_timezone: data.daily_rollover_timezone || 'America/Chicago',
       });
     } catch {
       // If fetch fails, keep defaults (all enabled)

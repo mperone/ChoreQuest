@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { Palmtree, Trash2, Plus, Loader2 } from 'lucide-react';
-import { toISO } from '../utils/calendarWeek';
+import { useSettings } from '../hooks/useSettings';
+import { todayISOInTimeZone } from '../utils/daytime';
 
 export default function VacationSettings() {
+  const { daily_rollover_timezone } = useSettings();
   const [vacations, setVacations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -56,7 +58,7 @@ export default function VacationSettings() {
     }
   };
 
-  const today = toISO(new Date());
+  const today = todayISOInTimeZone(daily_rollover_timezone);
 
   return (
     <div className="game-panel p-5">

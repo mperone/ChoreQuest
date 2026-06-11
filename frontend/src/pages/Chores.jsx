@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
+import { useSettings } from '../hooks/useSettings';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
 import { formatScheduleSummary } from '../utils/scheduleDays';
-import { toISO } from '../utils/calendarWeek';
+import { todayISOInTimeZone } from '../utils/daytime';
 import {
   filterKidQuestItems,
   groupKidQuestAssignments,
@@ -155,13 +156,14 @@ function KidAssignmentMeta({ item, today }) {
   );
 }
 
-function todayISO() {
-  return toISO(new Date());
+function todayISO(timeZone) {
+  return todayISOInTimeZone(timeZone);
 }
 
 export default function Chores() {
   const { user } = useAuth();
   const { colorTheme } = useTheme();
+  const { daily_rollover_timezone } = useSettings();
   const navigate = useNavigate();
   const isParent = user?.role === 'parent' || user?.role === 'admin';
   const isKid = user?.role === 'kid';
@@ -170,7 +172,7 @@ export default function Chores() {
   const [categories, setCategories] = useState([]);
   const [kids, setKids] = useState([]);
   const [kidAssignments, setKidAssignments] = useState([]);
-  const [kidToday, setKidToday] = useState(todayISO());
+  const [kidToday, setKidToday] = useState(() => todayISO(daily_rollover_timezone));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -209,12 +211,12 @@ export default function Chores() {
     if (!isKid) return;
     try {
       const data = await api('/api/calendar/mine?past_days=14&future_days=28');
-      setKidToday(data.today || todayISO());
+      setKidToday(data.today || todayISO(daily_rollover_timezone));
       setKidAssignments(Array.isArray(data.assignments) ? data.assignments : []);
     } catch (err) {
       setError(err.message || 'Failed to load your quests.');
     }
-  }, [isKid]);
+  }, [isKid, daily_rollover_timezone]);
 
   const fetchCategories = useCallback(async () => {
     try {

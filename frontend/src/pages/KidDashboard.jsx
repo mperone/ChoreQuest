@@ -21,7 +21,8 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
-import { mondayWeekStart, toISO } from '../utils/calendarWeek';
+import { mondayWeekStart } from '../utils/calendarWeek';
+import { todayISOInTimeZone } from '../utils/daytime';
 import { themedTitle } from '../utils/questThemeText';
 import PointCounter from '../components/PointCounter';
 import StreakDisplay from '../components/StreakDisplay';
@@ -34,12 +35,12 @@ import { renderPet, renderPetExtras, renderPetAccessory, buildPetColors } from '
 
 // ---------- helpers ----------
 
-function getMondayOfThisWeek() {
-  return mondayWeekStart(toISO(new Date()));
+function getMondayOfThisWeek(timeZone) {
+  return mondayWeekStart(todayISOInTimeZone(timeZone));
 }
 
-function todayISO() {
-  return toISO(new Date());
+function todayISO(timeZone) {
+  return todayISOInTimeZone(timeZone);
 }
 
 function difficultyLabel(difficulty) {
@@ -71,7 +72,7 @@ const cardVariants = {
 
 export default function KidDashboard() {
   const { user, updateUser } = useAuth();
-  const { spin_wheel_enabled } = useSettings();
+  const { daily_rollover_timezone, spin_wheel_enabled } = useSettings();
   const { colorTheme } = useTheme();
   const navigate = useNavigate();
 
@@ -108,8 +109,8 @@ export default function KidDashboard() {
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      const monday = getMondayOfThisWeek();
-      const today = todayISO();
+      const monday = getMondayOfThisWeek(daily_rollover_timezone);
+      const today = todayISO(daily_rollover_timezone);
 
       const promises = [
         api('/api/chores'),
@@ -145,7 +146,7 @@ export default function KidDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, spin_wheel_enabled]);
+  }, [user?.id, spin_wheel_enabled, daily_rollover_timezone]);
 
   useEffect(() => {
     fetchData();
