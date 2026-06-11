@@ -74,7 +74,7 @@ The top summary card should focus on today's chore state:
 
 Because the home page also needs to motivate kids, show a separate status strip above or near the today card:
 
-- `Points Balance`, shown with high-energy styling and the kid's current spendable point total.
+- `Points`, shown with high-energy styling and the kid's current points.
 - `Streak`, shown with similarly fun styling and the kid's current streak.
 
 Do not mix these lifetime/current-account stats into the today-summary metrics. The page should make both concepts visible: "how am I doing overall?" and "what is left today?"
