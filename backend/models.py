@@ -1,4 +1,5 @@
 import enum
+from enum import Enum as PyEnum
 from datetime import datetime, date
 from sqlalchemy import (
     Integer, String, Text, Boolean, Float, Date, DateTime, Enum, JSON,
@@ -28,6 +29,13 @@ class Recurrence(str, enum.Enum):
     fortnightly = "fortnightly"
     monthly = "monthly"
     custom = "custom"
+
+
+class ChoreDaypart(str, PyEnum):
+    morning = "morning"
+    afternoon = "afternoon"
+    evening = "evening"
+    anytime = "anytime"
 
 
 class ScheduleType(str, enum.Enum):
@@ -170,6 +178,12 @@ class Chore(Base):
     recurrence: Mapped[Recurrence] = mapped_column(Enum(Recurrence), nullable=False)
     custom_days: Mapped[list | None] = mapped_column(JSON, nullable=True)
     requires_photo: Mapped[bool] = mapped_column(Boolean, default=False)
+    daypart: Mapped[ChoreDaypart] = mapped_column(
+        Enum(ChoreDaypart),
+        nullable=False,
+        default=ChoreDaypart.anytime,
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -331,6 +331,46 @@ class MigrationRunnerTests(unittest.TestCase):
 
             self.assertIsNone(table)
 
+    def test_adds_chore_daypart_and_sort_order_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "app.db"
+            backup_dir = Path(tmp) / "backups"
+
+            with closing(sqlite3.connect(db_path)) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE chores (
+                        id INTEGER PRIMARY KEY,
+                        title TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute("INSERT INTO chores VALUES (1, 'Make bed')")
+                conn.commit()
+
+            migration = next(
+                m for m in MIGRATIONS if m.id == "2026_06_11_chore_daypart_order_v1"
+            )
+
+            run_sqlite_migrations(
+                f"sqlite+aiosqlite:///{db_path}",
+                migrations=[migration],
+                backup_dir=backup_dir,
+            )
+
+            with closing(sqlite3.connect(db_path)) as conn:
+                cols = {
+                    row[1]: row[4]
+                    for row in conn.execute("PRAGMA table_info(chores)")
+                }
+                row = conn.execute(
+                    "SELECT daypart, sort_order FROM chores WHERE id = 1"
+                ).fetchone()
+
+            self.assertIn("daypart", cols)
+            self.assertIn("sort_order", cols)
+            self.assertEqual(row, ("anytime", 0))
+
 
 if __name__ == "__main__":
     unittest.main()

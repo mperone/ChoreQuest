@@ -327,6 +327,36 @@ def _migrate_optional_quests_v1(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_chore_daypart_order_v1(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(
+        conn,
+        "chores",
+        "daypart",
+        "VARCHAR(20) DEFAULT 'anytime' NOT NULL",
+    )
+    _add_column_if_missing(
+        conn,
+        "chores",
+        "sort_order",
+        "INTEGER DEFAULT 0 NOT NULL",
+    )
+    if _table_exists(conn, "chores"):
+        conn.execute(
+            """
+            UPDATE chores
+            SET daypart = 'anytime'
+            WHERE daypart IS NULL OR daypart = ''
+            """
+        )
+        conn.execute(
+            """
+            UPDATE chores
+            SET sort_order = 0
+            WHERE sort_order IS NULL
+            """
+        )
+
+
 def _drop_quest_templates(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS quest_templates")
 
@@ -356,5 +386,10 @@ MIGRATIONS = [
         id="2026_06_11_drop_quest_templates",
         description="Drop retired built-in quest templates table",
         migrate=_drop_quest_templates,
+    ),
+    Migration(
+        id="2026_06_11_chore_daypart_order_v1",
+        description="Add chore daypart and parent-managed sort order",
+        migrate=_migrate_chore_daypart_order_v1,
     ),
 ]

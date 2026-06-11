@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from pydantic import BaseModel, Field
-from backend.models import UserRole, Difficulty, Recurrence, ScheduleType, AssignmentStatus, RedemptionStatus, PointType, NotificationType, RotationCadence
+from backend.models import UserRole, Difficulty, Recurrence, ChoreDaypart, ScheduleType, AssignmentStatus, RedemptionStatus, PointType, NotificationType, RotationCadence
 
 
 # Auth
@@ -87,6 +87,8 @@ class ChoreCreate(BaseModel):
     recurrence: Recurrence
     custom_days: list[int] | None = None
     requires_photo: bool = False
+    daypart: ChoreDaypart = ChoreDaypart.anytime
+    sort_order: int = 0
     assigned_user_ids: list[int] = []
 
 
@@ -100,6 +102,8 @@ class ChoreUpdate(BaseModel):
     recurrence: Recurrence | None = None
     custom_days: list[int] | None = None
     requires_photo: bool | None = None
+    daypart: ChoreDaypart | None = None
+    sort_order: int | None = None
     assigned_user_ids: list[int] | None = None
 
 
@@ -119,6 +123,8 @@ class ChoreResponse(BaseModel):
     weekdays: list[int] | None = None
     month_day: int | None = None
     requires_photo: bool
+    daypart: ChoreDaypart = ChoreDaypart.anytime
+    sort_order: int = 0
     is_optional: bool = False
     is_active: bool
     created_by: int
