@@ -18,6 +18,11 @@ export function displayNameForEntry(entry = {}) {
   return entry?.display_name || entry?.username || 'Unknown'
 }
 
+function entryMatchesUser(entry, currentUserId) {
+  if (currentUserId == null) return false
+  return entry?.user_id === currentUserId || entry?.id === currentUserId
+}
+
 function shortDate(dateStr) {
   if (!dateStr) return ''
   const [, month, day] = dateStr.split('-')
@@ -25,14 +30,24 @@ function shortDate(dateStr) {
 }
 
 export function buildProgressSnapshot({
+  currentUserId = null,
   entries = [],
   summary = {},
   achievementSummary = {},
   bestDay = null,
+  viewerRole = 'parent',
 } = {}) {
   const safeEntries = Array.isArray(entries) ? entries : []
   const safeSummary = summary || {}
   const safeAchievementSummary = achievementSummary || {}
+  const completed = safeSummary.total_completed || 0
+  const assigned = safeSummary.total_assigned || 0
+  const completion = formatPercent(safeSummary.completion_rate)
+  const assignedProgress = {
+    label: 'Assigned Progress',
+    value: `${completed}/${assigned}`,
+    detail: `${completion} complete`,
+  }
   const recentAchievement = safeAchievementSummary.recentUnlocked?.[0] || null
   const recentAchievementTitle = recentAchievement
     ? recentAchievement.title || recentAchievement.name
@@ -41,38 +56,61 @@ export function buildProgressSnapshot({
     if (!best || scoreForEntry(entry) > scoreForEntry(best)) return entry
     return best
   }, null)
+  const currentEntryIndex = safeEntries.findIndex((entry) => entryMatchesUser(entry, currentUserId))
+  const currentEntry = currentEntryIndex >= 0 ? safeEntries[currentEntryIndex] : null
+  const currentRank = currentEntry
+    ? currentEntry.rank || currentEntryIndex + 1
+    : null
+  const leaderSnapshot = leader
+    ? {
+        label: 'Weekly Leader',
+        name: displayNameForEntry(leader),
+        score: scoreForEntry(leader),
+        avatarConfig: leader.avatar_config || null,
+        detail: `${scoreForEntry(leader)} XP this week`,
+      }
+    : {
+        label: 'Weekly Leader',
+        name: 'No leader yet',
+        score: 0,
+        avatarConfig: null,
+        detail: 'No XP earned this week',
+      }
+  const currentUserSnapshot = currentEntry
+    ? {
+        label: 'Your Week',
+        name: displayNameForEntry(currentEntry),
+        score: scoreForEntry(currentEntry),
+        avatarConfig: currentEntry.avatar_config || null,
+        detail: `#${currentRank} - ${scoreForEntry(currentEntry)} XP this week`,
+      }
+    : {
+        label: 'Your Week',
+        name: 'No XP yet',
+        score: 0,
+        avatarConfig: null,
+        detail: 'Complete quests to join the standings',
+      }
+  const isKid = viewerRole === 'kid'
 
   return {
+    title: isKid ? 'My Snapshot' : 'Family Snapshot',
     xp: {
       label: '30-Day XP',
       value: safeSummary.total_xp || 0,
       detail: `${safeSummary.avg_daily_xp || 0} per day`,
     },
-    quests: {
-      label: 'Quests Done',
-      value: safeSummary.total_completed || 0,
-      detail: `${safeSummary.total_assigned || 0} assigned`,
-    },
+    assignedProgress,
+    quests: assignedProgress,
     completion: {
       label: 'Completion',
-      value: formatPercent(safeSummary.completion_rate),
-      detail: 'required quests',
+      value: completion,
+      detail: 'assigned quests',
     },
-    leader: leader
-      ? {
-          name: displayNameForEntry(leader),
-          score: scoreForEntry(leader),
-          avatarConfig: leader.avatar_config || null,
-          detail: `${scoreForEntry(leader)} XP this week`,
-        }
-      : {
-          name: 'No leader yet',
-          score: 0,
-          avatarConfig: null,
-          detail: 'No XP earned this week',
-        },
+    hero: isKid ? currentUserSnapshot : leaderSnapshot,
+    leader: leaderSnapshot,
     achievement: {
-      label: 'Rewards',
+      label: 'Achievements',
       value: `${safeAchievementSummary.unlockedCount || 0}/${safeAchievementSummary.total || 0}`,
       detail: recentAchievementTitle
         ? `Latest: ${recentAchievementTitle}`

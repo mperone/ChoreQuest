@@ -8,7 +8,6 @@ import {
   BarChart3,
   Flame,
   Loader2,
-  Sparkles,
   Star,
   Swords,
   TrendingUp,
@@ -173,8 +172,9 @@ function AchievementRow({ achievement, muted = false }) {
 const PROGRESS_TABS = [
   { id: 'standings', label: 'Standings', icon: Trophy },
   { id: 'trends', label: 'Trends', icon: TrendingUp },
-  { id: 'achievements', label: 'Rewards', icon: Sparkles },
+  { id: 'achievements', label: 'Achievements', icon: Award },
 ];
+const FAMILY_PROGRESS_TABS = PROGRESS_TABS.filter((tab) => tab.id !== 'achievements');
 
 function SnapshotMetric({ icon: Icon, label, value, detail, tone = 'text-accent' }) {
   return (
@@ -191,28 +191,26 @@ function SnapshotMetric({ icon: Icon, label, value, detail, tone = 'text-accent'
   );
 }
 
-function WeeklyLeader({ snapshot }) {
-  const leader = snapshot.leader;
-
+function SnapshotHero({ hero }) {
   return (
     <div className="rounded-md border border-border bg-surface-raised/30 p-3 min-w-0">
       <div className="flex items-center gap-2 text-muted text-[11px] font-semibold uppercase tracking-wide">
         <Trophy size={13} className="text-gold" />
-        <span>Weekly Leader</span>
+        <span>{hero.label}</span>
       </div>
       <div className="flex items-center gap-3 mt-3 min-w-0">
         <AvatarDisplay
-          config={leader.avatarConfig}
+          config={hero.avatarConfig}
           size="sm"
-          name={leader.name}
-          animate={leader.score > 0}
+          name={hero.name}
+          animate={hero.score > 0}
         />
         <div className="min-w-0">
           <p className="text-cream text-sm font-semibold truncate">
-            {leader.name}
+            {hero.name}
           </p>
           <p className="text-muted text-xs truncate">
-            {leader.detail}
+            {hero.detail}
           </p>
         </div>
       </div>
@@ -220,38 +218,45 @@ function WeeklyLeader({ snapshot }) {
   );
 }
 
-function SnapshotRail({ snapshot }) {
+function SnapshotRail({ isKid, snapshot }) {
   return (
-    <aside className="game-panel p-4 lg:sticky lg:top-4">
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <h2 className="text-cream text-sm font-semibold">Family Snapshot</h2>
-        <span className="rounded-md border border-border bg-surface-raised/30 px-2 py-1 text-[11px] font-semibold text-muted">
-          30 days
-        </span>
+    <aside className="game-panel p-4 h-full">
+      <div className="mb-3">
+        <h2 className="text-cream text-sm font-semibold">{snapshot.title}</h2>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-1 gap-3">
-        <WeeklyLeader snapshot={snapshot} />
+        <SnapshotHero hero={snapshot.hero} />
         <SnapshotMetric
           icon={Swords}
-          label={snapshot.quests.label}
-          value={snapshot.quests.value}
-          detail={snapshot.quests.detail}
+          label={snapshot.assignedProgress.label}
+          value={snapshot.assignedProgress.value}
+          detail={snapshot.assignedProgress.detail}
           tone="text-accent"
         />
         <SnapshotMetric
-          icon={BarChart3}
-          label={snapshot.completion.label}
-          value={snapshot.completion.value}
-          detail={snapshot.completion.detail}
-          tone="text-emerald"
-        />
-        <SnapshotMetric
-          icon={Sparkles}
-          label={snapshot.achievement.label}
-          value={snapshot.achievement.value}
-          detail={snapshot.achievement.detail}
+          icon={TrendingUp}
+          label={snapshot.xp.label}
+          value={snapshot.xp.value}
+          detail={snapshot.xp.detail}
           tone="text-gold"
         />
+        {isKid ? (
+          <SnapshotMetric
+            icon={Award}
+            label={snapshot.achievement.label}
+            value={snapshot.achievement.value}
+            detail={snapshot.achievement.detail}
+            tone="text-gold"
+          />
+        ) : (
+          <SnapshotMetric
+            icon={Star}
+            label={snapshot.bestDay.label}
+            value={snapshot.bestDay.value}
+            detail={snapshot.bestDay.detail}
+            tone="text-emerald"
+          />
+        )}
       </div>
     </aside>
   );
@@ -331,7 +336,7 @@ function TrendsPanel({ bestDay, progressDays, snapshot, summary }) {
           icon={BarChart3}
           label={snapshot.completion.label}
           value={snapshot.completion.value}
-          detail={snapshot.completion.detail}
+          detail={snapshot.assignedProgress.value}
           tone="text-emerald"
         />
       </div>
@@ -393,15 +398,15 @@ function AchievementsPanel({ achievementSummary, snapshot }) {
     <div className="space-y-4">
       <div className="grid sm:grid-cols-2 gap-3">
         <SnapshotMetric
-          icon={Sparkles}
+          icon={Award}
           label={snapshot.achievement.label}
           value={snapshot.achievement.value}
           detail={snapshot.achievement.detail}
           tone="text-gold"
         />
         <SnapshotMetric
-          icon={Award}
-          label="Reward XP"
+          icon={Star}
+          label="Achievement XP"
           value={`${achievementSummary.unlockedXp || 0}/${achievementSummary.availableXp || 0}`}
           detail="achievement XP unlocked"
           tone="text-accent"
@@ -446,15 +451,17 @@ function ProgressDashboard({
   entries,
   onTabChange,
   progressDays,
+  isKid,
   snapshot,
   summary,
   topScore,
   user,
 }) {
+  const tabs = isKid ? PROGRESS_TABS : FAMILY_PROGRESS_TABS;
   const tabRefs = useRef({});
-  const selectedTab = PROGRESS_TABS.some((tab) => tab.id === activeTab)
+  const selectedTab = tabs.some((tab) => tab.id === activeTab)
     ? activeTab
-    : 'standings';
+    : tabs[0].id;
 
   const selectTab = useCallback((tabId, shouldFocus = false) => {
     onTabChange(tabId);
@@ -473,36 +480,36 @@ function ProgressDashboard({
   }, [onTabChange]);
 
   const handleTabKeyDown = useCallback((event) => {
-    const currentIndex = PROGRESS_TABS.findIndex((tab) => tab.id === selectedTab);
+    const currentIndex = tabs.findIndex((tab) => tab.id === selectedTab);
     let nextIndex = currentIndex;
 
     if (event.key === 'ArrowLeft') {
-      nextIndex = (currentIndex - 1 + PROGRESS_TABS.length) % PROGRESS_TABS.length;
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
     } else if (event.key === 'ArrowRight') {
-      nextIndex = (currentIndex + 1) % PROGRESS_TABS.length;
+      nextIndex = (currentIndex + 1) % tabs.length;
     } else if (event.key === 'Home') {
       nextIndex = 0;
     } else if (event.key === 'End') {
-      nextIndex = PROGRESS_TABS.length - 1;
+      nextIndex = tabs.length - 1;
     } else {
       return;
     }
 
     event.preventDefault();
-    selectTab(PROGRESS_TABS[nextIndex].id, true);
-  }, [selectTab, selectedTab]);
+    selectTab(tabs[nextIndex].id, true);
+  }, [selectTab, selectedTab, tabs]);
 
   return (
-    <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)] items-start">
-      <SnapshotRail snapshot={snapshot} />
-      <section className="game-panel p-4 min-w-0">
+    <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)] md:items-stretch">
+      <SnapshotRail isKid={isKid} snapshot={snapshot} />
+      <section className="game-panel p-4 min-w-0 h-full">
         <div
           role="tablist"
           aria-label="Progress details"
           onKeyDown={handleTabKeyDown}
           className="flex flex-wrap gap-2 border-b border-border/70 pb-3"
         >
-          {PROGRESS_TABS.map((tab) => (
+          {tabs.map((tab) => (
             <ProgressTabButton
               key={tab.id}
               tab={tab}
@@ -547,6 +554,7 @@ function ProgressDashboard({
 export default function Leaderboard() {
   const { user } = useAuth();
   const { leaderboard_enabled } = useSettings();
+  const isKid = user?.role === 'kid';
   const [entries, setEntries] = useState([]);
   const [progress, setProgress] = useState({ days: [], summary: {} });
   const [achievements, setAchievements] = useState([]);
@@ -560,7 +568,7 @@ export default function Leaderboard() {
       const [leaderboardData, progressData, achievementsData] = await Promise.all([
         api('/api/stats/leaderboard'),
         api('/api/progress'),
-        api('/api/stats/achievements/all').catch(() => []),
+        isKid ? api('/api/stats/achievements/all').catch(() => []) : Promise.resolve([]),
       ]);
       setEntries(leaderboardData.leaderboard || leaderboardData || []);
       setProgress(progressData || { days: [], summary: {} });
@@ -568,7 +576,7 @@ export default function Leaderboard() {
     } catch (err) {
       setError(err.message || 'Failed to load progress');
     }
-  }, []);
+  }, [isKid]);
 
   useEffect(() => {
     if (!leaderboard_enabled) {
@@ -595,12 +603,14 @@ export default function Leaderboard() {
   const bestDay = useMemo(() => bestProgressDay(progressDays), [progressDays]);
   const snapshot = useMemo(
     () => buildProgressSnapshot({
+      currentUserId: user?.id,
       entries,
       summary,
       achievementSummary,
       bestDay,
+      viewerRole: isKid ? 'kid' : 'parent',
     }),
-    [entries, summary, achievementSummary, bestDay],
+    [user?.id, entries, summary, achievementSummary, bestDay, isKid],
   );
   const topScore = entries.length > 0
     ? Math.max(...entries.map((entry) => scoreForEntry(entry)), 1)
@@ -614,7 +624,9 @@ export default function Leaderboard() {
             Progress
           </h1>
           <p className="text-muted text-sm mt-1">
-            Weekly rankings, 30-day activity, and achievement rewards.
+            {isKid
+              ? 'Your weekly standing, 30-day activity, and achievements.'
+              : 'Family standings and 30-day activity.'}
           </p>
         </div>
       </div>
@@ -648,6 +660,7 @@ export default function Leaderboard() {
           entries={entries}
           onTabChange={setActiveTab}
           progressDays={progressDays}
+          isKid={isKid}
           snapshot={snapshot}
           summary={summary}
           topScore={topScore}

@@ -100,20 +100,24 @@ test('builds a compact progress snapshot from loaded progress data', () => {
     detail: '8 per day',
   })
   assert.deepEqual(snapshot.quests, {
-    label: 'Quests Done',
-    value: 18,
-    detail: '24 assigned',
+    label: 'Assigned Progress',
+    value: '18/24',
+    detail: '75% complete',
   })
+  assert.deepEqual(snapshot.assignedProgress, snapshot.quests)
   assert.deepEqual(snapshot.completion, {
     label: 'Completion',
     value: '75%',
-    detail: 'required quests',
+    detail: 'assigned quests',
   })
+  assert.equal(snapshot.title, 'Family Snapshot')
+  assert.equal(snapshot.hero.label, 'Weekly Leader')
+  assert.equal(snapshot.hero.name, 'Mia')
   assert.equal(snapshot.leader.name, 'Mia')
   assert.equal(snapshot.leader.score, 90)
   assert.deepEqual(snapshot.leader.avatarConfig, { head: 'round' })
   assert.deepEqual(snapshot.achievement, {
-    label: 'Rewards',
+    label: 'Achievements',
     value: '2/5',
     detail: 'Latest: Helping Hand',
   })
@@ -128,11 +132,41 @@ test('builds safe progress snapshot fallbacks for empty data', () => {
   const snapshot = buildProgressSnapshot()
 
   assert.equal(snapshot.xp.value, 0)
-  assert.equal(snapshot.quests.detail, '0 assigned')
+  assert.equal(snapshot.quests.value, '0/0')
+  assert.equal(snapshot.quests.detail, '0% complete')
   assert.equal(snapshot.completion.value, '0%')
   assert.equal(snapshot.leader.name, 'No leader yet')
   assert.equal(snapshot.leader.score, 0)
+  assert.equal(snapshot.hero.label, 'Weekly Leader')
+  assert.equal(snapshot.hero.name, 'No leader yet')
   assert.equal(snapshot.achievement.value, '0/0')
   assert.equal(snapshot.achievement.detail, 'No achievements unlocked yet')
   assert.equal(snapshot.bestDay.value, '0 XP')
+})
+
+test('builds kid-focused snapshot copy from the current leaderboard entry', () => {
+  const snapshot = buildProgressSnapshot({
+    currentUserId: 2,
+    viewerRole: 'kid',
+    entries: [
+      { id: 1, display_name: 'Ari', weekly_xp: 120, rank: 1 },
+      { id: 2, display_name: 'Mia', weekly_xp: 90, rank: 2 },
+    ],
+    summary: {
+      total_completed: 9,
+      total_assigned: 10,
+      completion_rate: 0.9,
+    },
+  })
+
+  assert.equal(snapshot.title, 'My Snapshot')
+  assert.equal(snapshot.hero.label, 'Your Week')
+  assert.equal(snapshot.hero.name, 'Mia')
+  assert.equal(snapshot.hero.score, 90)
+  assert.equal(snapshot.hero.detail, '#2 - 90 XP this week')
+  assert.deepEqual(snapshot.assignedProgress, {
+    label: 'Assigned Progress',
+    value: '9/10',
+    detail: '90% complete',
+  })
 })
