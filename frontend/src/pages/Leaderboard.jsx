@@ -214,7 +214,7 @@ function SnapshotRail({ snapshot }) {
           30 days
         </span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-1 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-1 gap-3">
         <WeeklyLeader snapshot={snapshot} />
         <SnapshotMetric
           icon={Swords}
@@ -425,7 +425,7 @@ function ProgressDashboard({
     : 'standings';
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] items-start">
+    <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)] items-start">
       <SnapshotRail snapshot={snapshot} />
       <section className="game-panel p-4 min-w-0">
         <div
