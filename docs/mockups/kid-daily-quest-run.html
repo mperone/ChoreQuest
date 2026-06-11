@@ -101,6 +101,59 @@
       padding: 16px;
     }
 
+    .status-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .status-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 82px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: linear-gradient(135deg, rgba(245,158,11,.18), rgba(56,189,248,.12));
+    }
+
+    .status-card.streak {
+      background: linear-gradient(135deg, rgba(239,68,68,.18), rgba(245,158,11,.14));
+    }
+
+    .status-card::after {
+      content: "";
+      position: absolute;
+      right: -18px;
+      top: -18px;
+      width: 64px;
+      height: 64px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+    }
+
+    .status-icon {
+      font-size: 18px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .status-card strong {
+      display: block;
+      position: relative;
+      z-index: 1;
+      color: var(--cream);
+      font-size: 22px;
+      line-height: 1;
+      margin-top: 3px;
+    }
+
+    .status-card span {
+      position: relative;
+      z-index: 1;
+    }
+
     .panel {
       background: rgba(24,34,53,.92);
       border: 1px solid var(--border);
@@ -242,6 +295,10 @@
       font-weight: 800;
       font-size: 12px;
       padding: 7px 10px;
+    }
+
+    .inline-action.full {
+      width: 100%;
     }
 
     .summary-copy {
@@ -419,13 +476,26 @@
       <div class="phone">
         <p class="mock-caption">Recommended Kid Home</p>
         <div class="screen">
+          <div class="status-strip">
+            <div class="status-card">
+              <div class="status-icon">&#9733;</div>
+              <span class="label">Points Balance</span>
+              <strong>1,245</strong>
+            </div>
+            <div class="status-card streak">
+              <div class="status-icon">&#128293;</div>
+              <span class="label">Streak</span>
+              <strong>6 days</strong>
+            </div>
+          </div>
+
           <div class="panel">
             <div class="row">
               <div>
                 <p class="label">Good morning</p>
                 <h2>Mia's Day</h2>
               </div>
-              <span class="pill">6 day streak</span>
+              <span class="pill">Today</span>
             </div>
             <p class="summary-copy">2 of 5 chores done today</p>
             <div class="stats">
@@ -478,7 +548,7 @@
                 <span>20 pts</span>
                 <span>Kitchen</span>
               </div>
-              <button class="inline-action">Mark Done</button>
+              <button class="inline-action full">Mark Done</button>
             </div>
           </article>
 
@@ -494,7 +564,7 @@
                 <span>15 pts</span>
                 <span>Evening</span>
               </div>
-              <button class="inline-action">Expand</button>
+              <button class="inline-action full">Mark Done</button>
             </div>
           </article>
 
@@ -510,7 +580,7 @@
                 <span>10 pts</span>
                 <span>Bonus</span>
               </div>
-              <button class="inline-action">Mark Done</button>
+              <button class="inline-action full">Mark Done</button>
             </div>
           </article>
         </div>

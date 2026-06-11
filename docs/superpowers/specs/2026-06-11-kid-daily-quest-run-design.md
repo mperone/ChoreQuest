@@ -71,7 +71,13 @@ The top summary card should focus on today's chore state:
 - Done today, such as `2/5`.
 - Left today, such as `3`.
 - Next up, such as `Morning` or `Anytime`.
-- Streak may appear as a small motivational pill, but total lifetime points should not be mixed into the today summary. If points balance is shown, label it clearly as `Points Balance` outside the today card.
+
+Because the home page also needs to motivate kids, show a separate status strip above or near the today card:
+
+- `Points Balance`, shown with high-energy styling and the kid's current spendable point total.
+- `Streak`, shown with similarly fun styling and the kid's current streak.
+
+Do not mix these lifetime/current-account stats into the today-summary metrics. The page should make both concepts visible: "how am I doing overall?" and "what is left today?"
 
 The current daypart can be computed from local app time using the family rollover timezone. The first version should use simple windows:
 
@@ -91,7 +97,12 @@ Actionable chores on Kid Home can be completed in place.
 - The page refreshes local assignment state after submission.
 - The existing completion endpoint remains the source of truth.
 
-The current `Now` chores should be visually emphasized and can show expanded actions by default. `Anytime`, `Later`, and `Bonus` chores should still be actionable from Home. They can render more compactly, but tapping or expanding them reveals the same inline completion/photo controls. Kids should not be sent to the old Chores/Quests screen just to complete a different chore.
+The current `Now` chores should be visually emphasized and can show expanded actions by default. `Anytime`, `Later`, and `Bonus` chores should still be actionable from Home. Compact cards use one consistent action slot:
+
+- Non-photo chores show `Mark Done`.
+- Photo-required chores show the photo attach/submit flow.
+
+Kids should not be sent to the old Chores/Quests screen just to complete a different chore.
 
 Completion feedback should be short and useful:
 
