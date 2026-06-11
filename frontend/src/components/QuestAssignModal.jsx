@@ -6,11 +6,14 @@ import { bulkToggleState } from '../utils/bulkToggleState';
 import {
   DAY_NAMES,
   LAST_DAY_OF_MONTH,
+  buildSchedulePreview,
+  formatSchedulePreviewDate,
   formatScheduleSummary,
   monthDayFromISODate,
   normalizeMonthDay,
   normalizeScheduleDays,
   normalizeScheduleWeekdays,
+  scheduleShowsPreview,
   todayISO,
 } from '../utils/scheduleDays';
 import Modal from './Modal';
@@ -331,12 +334,12 @@ export default function QuestAssignModal({
 
   const photoBulkState = bulkToggleState(Object.values(kidConfigs), 'requires_photo');
   const optionalBulkState = bulkToggleState(Object.values(kidConfigs), 'is_optional');
-  const scheduleSummary = formatScheduleSummary({
-    schedule_type: scheduleType,
-    start_date: scheduleStartDate,
-    weekdays: scheduleWeekdays,
-    month_day: scheduleMonthDay,
-  });
+  const effectiveSchedule = getEffectiveSchedule();
+  const scheduleSummary = formatScheduleSummary(effectiveSchedule);
+  const showSchedulePreview = scheduleShowsPreview(effectiveSchedule);
+  const schedulePreview = showSchedulePreview
+    ? buildSchedulePreview(effectiveSchedule, 6)
+    : [];
 
   return (
     <Modal
@@ -597,6 +600,30 @@ export default function QuestAssignModal({
             <p className="text-accent text-xs font-medium">
               {scheduleSummary}
             </p>
+            {showSchedulePreview && (
+              <div className="rounded-md border border-border/70 bg-navy-light/40 p-2">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-muted text-[10px] font-semibold uppercase">
+                    Next Dates
+                  </span>
+                  {rotationEnabled && selectedCount >= 2 && (
+                    <span className="text-purple text-[10px] font-semibold">
+                      Rotates
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {schedulePreview.map((date) => (
+                    <span
+                      key={date}
+                      className="rounded-md border border-accent/30 bg-accent/10 px-2 py-1 text-[11px] font-medium text-accent"
+                    >
+                      {formatSchedulePreviewDate(date)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -251,18 +251,6 @@ class ChoreAssignmentRule(Base):
     user = relationship("User")
 
 
-class QuestTemplate(Base):
-    """Built-in quest templates that ship with the app."""
-    __tablename__ = "quest_templates"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    suggested_points: Mapped[int] = mapped_column(Integer, nullable=False)
-    difficulty: Mapped[Difficulty] = mapped_column(Enum(Difficulty), nullable=False)
-    category_name: Mapped[str] = mapped_column(String(50), nullable=False)
-    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
-
-
 class Reward(Base):
     __tablename__ = "rewards"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

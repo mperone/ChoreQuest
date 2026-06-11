@@ -16,7 +16,6 @@ from backend.models import (
     ChoreCategory,
     ChoreExclusion,
     ChoreRotation,
-    QuestTemplate,
     User,
     UserRole,
     AssignmentStatus,
@@ -38,7 +37,6 @@ from backend.schemas import (
     CategoryResponse,
     ChoreAssignRequest,
     AssignmentRuleUpdate,
-    QuestTemplateResponse,
     RotationResponse,
     QuestFeedbackRequest,
 )
@@ -683,19 +681,6 @@ async def delete_chore(
     await db.commit()
     await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=user.id)
     return None
-
-
-# ---------------------------------------------------------------------------
-# Quest Templates
-# ---------------------------------------------------------------------------
-
-@router.get("/templates", response_model=list[QuestTemplateResponse])
-async def list_templates(
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    result = await db.execute(select(QuestTemplate))
-    return [QuestTemplateResponse.model_validate(t) for t in result.scalars().all()]
 
 
 # ---------------------------------------------------------------------------

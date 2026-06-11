@@ -20,7 +20,11 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import AvatarDisplay from '../components/AvatarDisplay';
 import Modal from '../components/Modal';
-import { assignmentActionState } from '../utils/assignmentActions';
+import {
+  approvalDateLabel,
+  assignmentActionState,
+  collectPendingApprovals,
+} from '../utils/assignmentActions';
 import { toISO } from '../utils/calendarWeek';
 
 export default function ParentDashboard() {
@@ -29,7 +33,7 @@ export default function ParentDashboard() {
   const { colorTheme } = useTheme();
 
   const [familyStats, setFamilyStats] = useState([]);
-  const [pendingVerifications, setPendingVerifications] = useState([]);
+  const [approvalInboxItems, setApprovalInboxItems] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -56,12 +60,7 @@ export default function ParentDashboard() {
 
       setFamilyStats(familyRes);
 
-      const today = toISO(new Date());
-      const todayAssignments = (calendarRes.days && calendarRes.days[today]) || [];
-      const needsVerification = todayAssignments.filter(
-        (a) => a.status === 'completed'
-      );
-      setPendingVerifications(needsVerification);
+      setApprovalInboxItems(collectPendingApprovals(calendarRes.days));
     } catch (err) {
       setError(err.message || 'Failed to load family data');
     } finally {
@@ -178,7 +177,8 @@ export default function ParentDashboard() {
     );
   }
 
-  const hasPendingItems = pendingVerifications.length > 0;
+  const today = toISO(new Date());
+  const hasPendingItems = approvalInboxItems.length > 0;
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
@@ -201,73 +201,20 @@ export default function ParentDashboard() {
         </div>
       )}
 
-      {/* Kid overview cards */}
-      {familyStats.length === 0 ? (
-        <div className="game-panel p-8 text-center">
-          <p className="text-muted text-sm">
-            No kids in your family yet.
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {familyStats.map((kid) => (
-            <div
-              key={kid.id}
-              className="game-panel p-4 cursor-pointer hover:border-accent/40 transition-colors"
-              onClick={() => navigate(`/kids/${kid.id}`)}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <AvatarDisplay
-                  config={kid.avatar_config}
-                  size="md"
-                  name={kid.display_name}
-                  animate
-                />
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-cream text-sm font-medium truncate">
-                    {kid.display_name}
-                  </h3>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="inline-flex items-center gap-1 text-gold text-xs font-medium">
-                      <Star size={11} fill="currentColor" />
-                      {kid.points_balance.toLocaleString()} XP
-                    </span>
-                    {kid.current_streak > 0 && (
-                      <span className="inline-flex items-center gap-1 text-orange-400 text-xs font-medium">
-                        <Flame size={11} fill="currentColor" />
-                        {kid.current_streak}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted">Today</span>
-                  <span className="text-cream font-medium">
-                    {kid.today_completed}/{kid.today_total} quests
-                  </span>
-                </div>
-                <ProgressBar
-                  completed={kid.today_completed}
-                  total={kid.today_total}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Pending Verifications */}
+      {/* Approval Inbox */}
       {hasPendingItems && (
         <section>
-          <h2 className="text-cream text-sm font-semibold mb-2">
-            Pending Verifications
-          </h2>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h2 className="text-cream text-sm font-semibold">
+              Approval Inbox
+            </h2>
+            <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-accent text-xs font-semibold">
+              {approvalInboxItems.length}
+            </span>
+          </div>
 
           <div className="space-y-2">
-            {pendingVerifications.map((assignment) => {
+            {approvalInboxItems.map((assignment) => {
               const approveKey = `approve-${assignment.id}`;
               const needsWorkKey = `needs-work-${assignment.id}`;
               const isApproving = actionLoading[approveKey];
@@ -280,15 +227,20 @@ export default function ParentDashboard() {
                   key={`assignment-${assignment.id}`}
                   className="game-panel p-3"
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p
-                        className="text-cream text-sm font-medium truncate cursor-pointer hover:text-accent transition-colors"
-                        title={themedTitle(assignment.chore?.title || 'Quest', colorTheme)}
-                        onClick={() => navigate(`/chores/${assignment.chore_id}`)}
-                      >
-                        {themedTitle(assignment.chore?.title || 'Quest', colorTheme)}
-                      </p>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <p
+                          className="text-cream text-sm font-medium truncate cursor-pointer hover:text-accent transition-colors"
+                          title={themedTitle(assignment.chore?.title || 'Quest', colorTheme)}
+                          onClick={() => navigate(`/chores/${assignment.chore_id}`)}
+                        >
+                          {themedTitle(assignment.chore?.title || 'Quest', colorTheme)}
+                        </p>
+                        <span className="rounded border border-border/70 px-1.5 py-0.5 text-[10px] font-semibold text-muted flex-shrink-0">
+                          {approvalDateLabel(assignment, today)}
+                        </span>
+                      </div>
                       <p className="text-muted text-xs mt-0.5">
                         by {assignment.user?.display_name || 'Kid'}
                         {(assignment.requires_photo || assignment.chore?.requires_photo) && (
@@ -374,6 +326,64 @@ export default function ParentDashboard() {
             })}
           </div>
         </section>
+      )}
+
+      {/* Kid overview cards */}
+      {familyStats.length === 0 ? (
+        <div className="game-panel p-8 text-center">
+          <p className="text-muted text-sm">
+            No kids in your family yet.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {familyStats.map((kid) => (
+            <div
+              key={kid.id}
+              className="game-panel p-4 cursor-pointer hover:border-accent/40 transition-colors"
+              onClick={() => navigate(`/kids/${kid.id}`)}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <AvatarDisplay
+                  config={kid.avatar_config}
+                  size="md"
+                  name={kid.display_name}
+                  animate
+                />
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-cream text-sm font-medium truncate">
+                    {kid.display_name}
+                  </h3>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="inline-flex items-center gap-1 text-gold text-xs font-medium">
+                      <Star size={11} fill="currentColor" />
+                      {kid.points_balance.toLocaleString()} XP
+                    </span>
+                    {kid.current_streak > 0 && (
+                      <span className="inline-flex items-center gap-1 text-orange-400 text-xs font-medium">
+                        <Flame size={11} fill="currentColor" />
+                        {kid.current_streak}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted">Today</span>
+                  <span className="text-cream font-medium">
+                    {kid.today_completed}/{kid.today_total} quests
+                  </span>
+                </div>
+                <ProgressBar
+                  completed={kid.today_completed}
+                  total={kid.today_total}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Quick Actions */}

@@ -179,7 +179,7 @@ Notifications that arrive even when the app is closed — just like a native app
 
 ## 🏰 For parents
 
-- **Quest Library** — browse all created quests in one place, search and filter by category and difficulty. Create new quests from scratch or from 24 built-in RPG-themed templates
+- **Quest Library** — browse all created quests in one place, search and filter by category and difficulty. Create new quests from scratch
 - **Quest Assignment** — assign quests to specific kids with per-child settings:
   - Individual recurrence per kid (one-time, daily, weekly, custom days)
   - Per-kid photo proof requirements
@@ -233,7 +233,7 @@ Notifications that arrive even when the app is closed — just like a native app
 
 ### First run
 
-The database, default categories (9), achievements (20), quest templates (24), and app settings are created on first startup. The first user to register becomes the admin. After that, registration requires an invite code by default — generate them from the admin dashboard.
+The database, default categories (9), achievements (20), and app settings are created on first startup. The first user to register becomes the admin. After that, registration requires an invite code by default — generate them from the admin dashboard.
 
 ### Data persistence
 
@@ -275,7 +275,7 @@ backend/
   achievements.py    # Achievement unlock criteria checking
   dependencies.py    # Auth dependency injection (get_current_user, require_parent)
   websocket_manager.py  # WebSocket connection manager
-  seed.py            # Default categories, achievements, quest templates, settings
+  seed.py            # Default categories, achievements, settings
   services/
     push.py          # Web Push subscription management
     push_hook.py     # Push notification dispatch on events
@@ -283,7 +283,7 @@ backend/
     pet_leveling.py  # Pet XP progression (8 levels from Hatchling to Legendary)
   routers/
     auth.py          # Registration, login, PIN, refresh, profile
-    chores.py        # Quest CRUD, categories, templates, assignment rules, completion
+    chores.py        # Quest CRUD, categories, assignment rules, completion
     rewards.py       # Reward CRUD, redemptions, approval workflow
     calendar.py      # Weekly calendar, auto-generation, quest trading
     stats.py         # Family stats, leaderboard, achievements, history, ranks

@@ -327,6 +327,10 @@ def _migrate_optional_quests_v1(conn: sqlite3.Connection) -> None:
     )
 
 
+def _drop_quest_templates(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP TABLE IF EXISTS quest_templates")
+
+
 MIGRATIONS = [
     Migration(
         id="2026_06_10_existing_lightweight_columns",
@@ -347,5 +351,10 @@ MIGRATIONS = [
         id="2026_06_10_optional_quests_v1",
         description="Add optional quest flags to assignment rules and rows",
         migrate=_migrate_optional_quests_v1,
+    ),
+    Migration(
+        id="2026_06_11_drop_quest_templates",
+        description="Drop retired built-in quest templates table",
+        migrate=_drop_quest_templates,
     ),
 ]

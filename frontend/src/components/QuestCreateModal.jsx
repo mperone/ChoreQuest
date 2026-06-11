@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import { useTheme } from '../hooks/useTheme';
-import { themedTitle, themedDescription } from '../utils/questThemeText';
 import Modal from './Modal';
-import {
-  BookTemplate,
-  Star,
-  Scroll,
-} from 'lucide-react';
 
 const DIFFICULTY_OPTIONS = [
   { value: 'easy', label: 'Easy', level: 1 },
@@ -35,12 +28,9 @@ export default function QuestCreateModal({
   categories,
   editingChore,
 }) {
-  const { colorTheme } = useTheme();
   const [form, setForm] = useState({ ...emptyForm });
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [templates, setTemplates] = useState([]);
-  const [showTemplates, setShowTemplates] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,34 +46,11 @@ export default function QuestCreateModal({
         setForm({ ...emptyForm });
       }
       setFormError('');
-      setShowTemplates(false);
-    }
-  }, [isOpen, editingChore]);
-
-  useEffect(() => {
-    if (isOpen && !editingChore) {
-      api('/api/chores/templates')
-        .then((data) => setTemplates(Array.isArray(data) ? data : []))
-        .catch(() => setTemplates([]));
     }
   }, [isOpen, editingChore]);
 
   const updateForm = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const applyTemplate = (tpl) => {
-    const catMatch = categories.find(
-      (c) => c.name.toLowerCase() === tpl.category_name.toLowerCase()
-    );
-    setForm({
-      title: tpl.title,
-      description: tpl.description || '',
-      points: tpl.suggested_points,
-      difficulty: tpl.difficulty,
-      category_id: catMatch ? String(catMatch.id) : '',
-    });
-    setShowTemplates(false);
   };
 
   const handleSubmit = async () => {
@@ -130,14 +97,6 @@ export default function QuestCreateModal({
     }
   };
 
-  // Group templates by category
-  const templatesByCategory = templates.reduce((acc, tpl) => {
-    const cat = tpl.category_name || 'Other';
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(tpl);
-    return acc;
-  }, {});
-
   return (
     <Modal
       isOpen={isOpen}
@@ -157,61 +116,6 @@ export default function QuestCreateModal({
         {formError && (
           <div className="p-2 rounded border border-crimson/40 bg-crimson/10 text-crimson text-sm">
             {formError}
-          </div>
-        )}
-
-        {/* Template picker (only when creating) */}
-        {!editingChore && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowTemplates(!showTemplates)}
-              className="flex items-center gap-2 text-accent text-sm hover:text-accent/80 transition-colors"
-            >
-              <BookTemplate size={14} />
-              {showTemplates ? 'Hide templates' : 'Choose from Quest Templates'}
-            </button>
-
-            {showTemplates && (
-              <div className="mt-3 max-h-60 overflow-y-auto space-y-3 border border-border rounded-lg p-3 bg-surface-raised/30">
-                {Object.entries(templatesByCategory).map(([cat, tpls]) => (
-                  <div key={cat}>
-                    <p className="text-muted text-xs font-bold mb-1">
-                      {cat}
-                    </p>
-                    <div className="space-y-1">
-                      {tpls.map((tpl) => (
-                        <button
-                          key={tpl.id}
-                          onClick={() => applyTemplate(tpl)}
-                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-raised transition-colors border border-transparent hover:border-accent/30"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-cream text-sm font-medium">
-                              {themedTitle(tpl.title, colorTheme)}
-                            </span>
-                            <span className="flex items-center gap-1 text-gold text-xs">
-                              <Star size={10} className="fill-gold" />
-                              {tpl.suggested_points} XP
-                            </span>
-                          </div>
-                          {tpl.description && (
-                            <p className="text-muted text-xs line-clamp-1 mt-0.5">
-                              {themedDescription(tpl.title, tpl.description, colorTheme)}
-                            </p>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {templates.length === 0 && (
-                  <p className="text-muted text-xs text-center py-3">
-                    No templates available yet.
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
 

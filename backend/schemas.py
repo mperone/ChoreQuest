@@ -393,19 +393,6 @@ class AssignmentRuleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# Quest Templates
-class QuestTemplateResponse(BaseModel):
-    id: int
-    title: str
-    description: str | None
-    suggested_points: int
-    difficulty: Difficulty
-    category_name: str
-    icon: str | None
-
-    model_config = {"from_attributes": True}
-
-
 # Rotations
 class RotationCreate(BaseModel):
     chore_id: int

@@ -292,6 +292,45 @@ class MigrationRunnerTests(unittest.TestCase):
             self.assertIn("is_optional", rule_cols)
             self.assertIn("is_optional", assignment_cols)
 
+    def test_drops_retired_quest_templates_table(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "app.db"
+            backup_dir = Path(tmp) / "backups"
+
+            with closing(sqlite3.connect(db_path)) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE quest_templates (
+                        id INTEGER PRIMARY KEY,
+                        title TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute("INSERT INTO quest_templates VALUES (1, 'Template')")
+                conn.commit()
+
+            migration = next(
+                m for m in MIGRATIONS if m.id == "2026_06_11_drop_quest_templates"
+            )
+
+            run_sqlite_migrations(
+                f"sqlite+aiosqlite:///{db_path}",
+                migrations=[migration],
+                backup_dir=backup_dir,
+            )
+
+            with closing(sqlite3.connect(db_path)) as conn:
+                table = conn.execute(
+                    """
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table'
+                      AND name = 'quest_templates'
+                    """
+                ).fetchone()
+
+            self.assertIsNone(table)
+
 
 if __name__ == "__main__":
     unittest.main()
