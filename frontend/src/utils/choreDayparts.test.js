@@ -6,6 +6,7 @@ import {
   buildChoreReorderPayload,
   currentDaypartForHour,
   groupDailyAssignments,
+  moveChoreBetweenDayparts,
 } from './choreDayparts.js'
 
 function item({
@@ -174,4 +175,31 @@ test('builds parent reorder payload from grouped chore ids', () => {
     ],
   })
   assert.deepEqual(DAYPART_ORDER, ['morning', 'afternoon', 'evening', 'anytime'])
+})
+
+test('moves a chore within and across parent daypart groups', () => {
+  const first = moveChoreBetweenDayparts(
+    {
+      morning: [1, 2, 3],
+      afternoon: [],
+      evening: [],
+      anytime: [],
+    },
+    { choreId: 1, fromDaypart: 'morning', toDaypart: 'morning', toIndex: 2 },
+  )
+
+  assert.deepEqual(first.morning, [2, 3, 1])
+
+  const second = moveChoreBetweenDayparts(
+    {
+      morning: [2, 3, 1],
+      afternoon: [],
+      evening: [],
+      anytime: [4],
+    },
+    { choreId: 3, fromDaypart: 'morning', toDaypart: 'anytime', toIndex: 1 },
+  )
+
+  assert.deepEqual(second.morning, [2, 1])
+  assert.deepEqual(second.anytime, [4, 3])
 })

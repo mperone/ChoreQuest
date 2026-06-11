@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -13,6 +13,13 @@ import {
   isActionableStatus,
   isDoneStatus,
 } from '../utils/kidQuestBoard';
+import {
+  DAYPART_LABELS,
+  DAYPART_ORDER,
+  buildChoreReorderPayload,
+  groupChoresForParentOrdering,
+  moveChoreBetweenDayparts,
+} from '../utils/choreDayparts';
 import Modal from '../components/Modal';
 import QuestCreateModal from '../components/QuestCreateModal';
 import QuestAssignModal from '../components/QuestAssignModal';
@@ -35,6 +42,7 @@ import {
   ScrollText,
   Zap,
   Sparkles,
+  GripVertical,
 } from 'lucide-react';
 
 const DIFFICULTY_OPTIONS = [
@@ -186,6 +194,8 @@ export default function Chores() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingChore, setEditingChore] = useState(null);
   const [assigningChore, setAssigningChore] = useState(null);
+  const [draggedChore, setDraggedChore] = useState(null);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -281,6 +291,19 @@ export default function Chores() {
 
   const libraryChores = chores;
   const activeChores = chores.filter((c) => (c.assignment_count || 0) > 0);
+  const parentOrderGroups = useMemo(() => {
+    const groups = groupChoresForParentOrdering(chores);
+    return Object.fromEntries(
+      DAYPART_ORDER.map((daypart) => [
+        daypart,
+        groups[daypart].map((chore) => chore.id),
+      ]),
+    );
+  }, [chores]);
+  const parentChoreById = useMemo(
+    () => new Map(chores.map((chore) => [Number(chore.id), chore])),
+    [chores],
+  );
   const kidQuestGroups = isKid
     ? groupKidQuestAssignments(kidAssignments, kidToday)
     : { today: [], upcoming: [], recent: [] };
@@ -308,6 +331,65 @@ export default function Chores() {
     today: kidQuestGroups.today.length,
     upcoming: kidQuestGroups.upcoming.length,
     recent: kidQuestGroups.recent.length,
+  };
+
+  const saveDaypartOrder = async (nextGroups) => {
+    setSavingOrder(true);
+    try {
+      await api('/api/chores/reorder-dayparts', {
+        method: 'POST',
+        body: buildChoreReorderPayload(nextGroups),
+      });
+      await fetchChores();
+    } catch (err) {
+      setError(err.message || 'Failed to save quest order.');
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
+  const handleDaypartDragStart = (event, choreId, fromDaypart) => {
+    event.stopPropagation();
+    if (savingOrder) return;
+    setDraggedChore({ choreId, fromDaypart });
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(choreId));
+  };
+
+  const handleDaypartDragOver = (event) => {
+    if (!draggedChore || savingOrder) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const dropChoreIntoDaypart = async (event, toDaypart, toIndex) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!draggedChore || savingOrder) return;
+
+    const nextGroups = moveChoreBetweenDayparts(parentOrderGroups, {
+      choreId: draggedChore.choreId,
+      fromDaypart: draggedChore.fromDaypart,
+      toDaypart,
+      toIndex,
+    });
+
+    setDraggedChore(null);
+    await saveDaypartOrder(nextGroups);
+  };
+
+  const dropChoreOntoRow = async (event, toDaypart, rowIndex) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const targetIndex = rowIndex + (event.clientY > rect.top + rect.height / 2 ? 1 : 0);
+    const fromIds = parentOrderGroups[toDaypart] || [];
+    const fromIndex = draggedChore?.fromDaypart === toDaypart
+      ? fromIds.findIndex((id) => Number(id) === Number(draggedChore.choreId))
+      : -1;
+    const adjustedIndex = fromIndex !== -1 && fromIndex < targetIndex
+      ? targetIndex - 1
+      : targetIndex;
+
+    await dropChoreIntoDaypart(event, toDaypart, adjustedIndex);
   };
 
   const handleDelete = async () => {
@@ -464,6 +546,94 @@ export default function Chores() {
           </select>
         </div>
       </div>
+
+      {/* Parent Daypart Ordering */}
+      {isParent && chores.length > 0 && (
+        <section className="game-panel p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-cream text-sm font-semibold">Daily order</h2>
+            {savingOrder && (
+              <span className="inline-flex items-center gap-1 text-xs text-accent">
+                <Loader2 size={12} className="animate-spin" />
+                Saving order...
+              </span>
+            )}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            {DAYPART_ORDER.map((daypart) => {
+              const choreIds = parentOrderGroups[daypart] || [];
+
+              return (
+                <div
+                  key={daypart}
+                  className="rounded-md border border-border bg-navy-light/40 p-2 min-h-[8rem]"
+                  onDragOver={handleDaypartDragOver}
+                  onDrop={(event) => dropChoreIntoDaypart(event, daypart, choreIds.length)}
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      {DAYPART_LABELS[daypart]}
+                    </h3>
+                    <span className="rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[11px] text-muted">
+                      {choreIds.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {choreIds.length === 0 && (
+                      <div className="flex min-h-20 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted/70">
+                        No quests
+                      </div>
+                    )}
+
+                    {choreIds.map((choreId, index) => {
+                      const chore = parentChoreById.get(Number(choreId));
+                      if (!chore) return null;
+
+                      const title = themedTitle(chore.title, colorTheme);
+                      const isDraggingThis = Number(draggedChore?.choreId) === Number(choreId);
+
+                      return (
+                        <button
+                          key={choreId}
+                          type="button"
+                          draggable={!savingOrder}
+                          aria-disabled={savingOrder}
+                          aria-label={`Move ${chore.title} within daily order`}
+                          title={title}
+                          onClick={(event) => event.stopPropagation()}
+                          onDragStart={(event) => handleDaypartDragStart(event, choreId, daypart)}
+                          onDragOver={handleDaypartDragOver}
+                          onDrop={(event) => dropChoreOntoRow(event, daypart, index)}
+                          onDragEnd={() => setDraggedChore(null)}
+                          className={`flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left transition-colors ${
+                            isDraggingThis
+                              ? 'border-accent bg-surface-raised opacity-60'
+                              : 'border-border bg-surface-raised/60 hover:border-accent/50'
+                          } ${savingOrder ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'}`}
+                        >
+                          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border bg-navy text-muted">
+                            <GripVertical size={14} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-cream">
+                              {title}
+                            </span>
+                            <span className="block truncate text-xs text-muted">
+                              {chore.points || 0} XP
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Chore List */}
       {filteredChores.length === 0 ? (

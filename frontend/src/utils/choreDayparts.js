@@ -116,6 +116,36 @@ export function groupDailyAssignments(items, { currentDaypart } = {}) {
   }
 }
 
+export function groupChoresForParentOrdering(chores) {
+  const groups = Object.fromEntries(DAYPART_ORDER.map((daypart) => [daypart, []]))
+  for (const chore of chores || []) {
+    const daypart = normaliseDaypart(chore.daypart)
+    groups[daypart].push(chore)
+  }
+  for (const daypart of DAYPART_ORDER) {
+    groups[daypart].sort((a, b) => (
+      Number(a.sort_order || 0) - Number(b.sort_order || 0)
+      || String(a.title || '').localeCompare(String(b.title || ''))
+    ))
+  }
+  return groups
+}
+
+export function moveChoreBetweenDayparts(groups, move) {
+  const next = Object.fromEntries(
+    DAYPART_ORDER.map((daypart) => [daypart, [...(groups[daypart] || [])]]),
+  )
+  const fromDaypart = normaliseDaypart(move.fromDaypart)
+  const toDaypart = normaliseDaypart(move.toDaypart)
+  const choreId = Number(move.choreId)
+
+  next[fromDaypart] = next[fromDaypart].filter((id) => Number(id) !== choreId)
+  const boundedIndex = Math.max(0, Math.min(Number(move.toIndex), next[toDaypart].length))
+  next[toDaypart].splice(boundedIndex, 0, choreId)
+
+  return next
+}
+
 export function buildChoreReorderPayload(groupedIds) {
   return {
     items: DAYPART_ORDER.flatMap((daypart) => (

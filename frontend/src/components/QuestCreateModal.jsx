@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import Modal from './Modal';
+import { DAYPART_LABELS, DAYPART_ORDER } from '../utils/choreDayparts';
 
 const DIFFICULTY_OPTIONS = [
   { value: 'easy', label: 'Easy', level: 1 },
@@ -19,6 +20,7 @@ const emptyForm = {
   points: 10,
   difficulty: 'easy',
   category_id: '',
+  daypart: 'anytime',
 };
 
 export default function QuestCreateModal({
@@ -41,6 +43,7 @@ export default function QuestCreateModal({
           points: editingChore.points || 10,
           difficulty: editingChore.difficulty || 'easy',
           category_id: editingChore.category_id ? String(editingChore.category_id) : '',
+          daypart: editingChore.daypart || 'anytime',
         });
       } else {
         setForm({ ...emptyForm });
@@ -76,6 +79,7 @@ export default function QuestCreateModal({
       points: Number(form.points),
       difficulty: form.difficulty,
       category_id: Number(form.category_id),
+      daypart: form.daypart,
       // New quests from this flow don't set recurrence/photo on the chore itself
       recurrence: 'once',
       requires_photo: false,
@@ -176,6 +180,30 @@ export default function QuestCreateModal({
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        {/* Daypart */}
+        <div>
+          <label className="block text-cream text-sm font-medium mb-1 tracking-wide">
+            Best time
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {DAYPART_ORDER.map((daypart) => (
+              <button
+                key={daypart}
+                type="button"
+                onClick={() => updateForm('daypart', daypart)}
+                aria-pressed={form.daypart === daypart}
+                className={`rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+                  form.daypart === daypart
+                    ? 'border-gold bg-gold text-navy shadow-sm'
+                    : 'border-border bg-navy-light text-cream hover:border-accent/60'
+                }`}
+              >
+                {DAYPART_LABELS[daypart]}
+              </button>
+            ))}
           </div>
         </div>
 
