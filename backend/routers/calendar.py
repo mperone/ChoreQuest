@@ -22,6 +22,7 @@ from backend.schemas import TradeRequest
 from backend.dependencies import get_current_user, require_parent
 from backend.websocket_manager import ws_manager
 from backend.services.assignment_generator import auto_generate_week_assignments
+from backend.services.calendar_windows import monday_week_start, monday_week_starts_to_generate
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -99,7 +100,7 @@ async def get_weekly_calendar(
             else (a.chore.requires_photo if a.chore else False)
         )
 
-        entry = _build_assignment_entry(a, effective_requires_photo)
+        entry = _build_assignment_entry(a, effective_requires_photo, kid_rule)
         grouped[day_key].append(entry)
 
     return {
@@ -109,8 +110,94 @@ async def get_weekly_calendar(
     }
 
 
+@router.get("/mine")
+async def get_my_calendar_assignments(
+    past_days: int = Query(
+        14,
+        ge=0,
+        le=90,
+        description="Number of past days to include without generating old assignments",
+    ),
+    future_days: int = Query(
+        28,
+        ge=0,
+        le=90,
+        description="Number of future days to include and generate as needed",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Kid assignment list for the richer Quests page.
+
+    Unlike the weekly calendar endpoint, this does not auto-generate past
+    weeks. It only generates the current week and future weeks, then reads
+    existing historical rows for the requested past window.
+    """
+    if current_user.role != UserRole.kid:
+        raise HTTPException(status_code=403, detail="Only kids can use this endpoint")
+
+    today = date.today()
+    start_date = today - timedelta(days=past_days)
+    end_date = today + timedelta(days=future_days)
+
+    current_week_start = monday_week_start(today)
+    for week_start in monday_week_starts_to_generate(today, end_date):
+        await auto_generate_week_assignments(
+            db,
+            week_start,
+            start_date=today if week_start == current_week_start else None,
+        )
+
+    result = await db.execute(
+        select(ChoreAssignment)
+        .join(Chore, ChoreAssignment.chore_id == Chore.id)
+        .options(
+            selectinload(ChoreAssignment.chore).selectinload(Chore.category),
+            selectinload(ChoreAssignment.user),
+        )
+        .where(
+            ChoreAssignment.user_id == current_user.id,
+            ChoreAssignment.date >= start_date,
+            ChoreAssignment.date <= end_date,
+            Chore.is_active == True,
+        )
+        .order_by(ChoreAssignment.date, ChoreAssignment.id)
+    )
+    assignments = result.scalars().all()
+
+    rule_map: dict[tuple[int, int], ChoreAssignmentRule] = {}
+    if assignments:
+        rules_result = await db.execute(
+            select(ChoreAssignmentRule).where(
+                ChoreAssignmentRule.user_id == current_user.id,
+                ChoreAssignmentRule.is_active == True,
+            )
+        )
+        for r in rules_result.scalars().all():
+            rule_map[(r.chore_id, r.user_id)] = r
+
+    entries = []
+    for a in assignments:
+        kid_rule = rule_map.get((a.chore_id, a.user_id))
+        effective_requires_photo = (
+            kid_rule.requires_photo
+            if kid_rule is not None
+            else (a.chore.requires_photo if a.chore else False)
+        )
+        entries.append(_build_assignment_entry(a, effective_requires_photo, kid_rule))
+
+    return {
+        "today": today.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "assignments": entries,
+    }
+
+
 def _build_assignment_entry(
-    a: ChoreAssignment, effective_requires_photo: bool
+    a: ChoreAssignment,
+    effective_requires_photo: bool,
+    rule: ChoreAssignmentRule | None = None,
 ) -> dict:
     """Build a calendar assignment dict from a ChoreAssignment with loaded relations."""
     entry = {
@@ -124,6 +211,7 @@ def _build_assignment_entry(
         "verified_by": a.verified_by,
         "photo_proof_path": a.photo_proof_path,
         "requires_photo": effective_requires_photo,
+        "is_optional": a.is_optional,
     }
     if a.chore:
         entry["chore"] = {
@@ -143,7 +231,12 @@ def _build_assignment_entry(
             } if a.chore.category else None,
             "recurrence": a.chore.recurrence.value if a.chore.recurrence else None,
             "custom_days": a.chore.custom_days,
+            "schedule_type": rule.schedule_type.value if rule and rule.schedule_type else None,
+            "start_date": rule.start_date.isoformat() if rule and rule.start_date else None,
+            "weekdays": rule.weekdays if rule else None,
+            "month_day": rule.month_day if rule else None,
             "requires_photo": effective_requires_photo,
+            "is_optional": a.is_optional,
             "is_active": a.chore.is_active,
             "created_by": a.chore.created_by,
             "created_at": a.chore.created_at.isoformat() if a.chore.created_at else None,

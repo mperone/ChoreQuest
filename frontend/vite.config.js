@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const defaultBackendTarget = 'http://localhost:8123'
+const defaultCompatVersion = 'dev'
 
 function withoutTrailingSlash(value) {
   return value.replace(/\/+$/, '')
@@ -25,6 +26,19 @@ function resolveWebSocketTarget(backendTarget) {
   const url = new URL(backendTarget)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return withoutTrailingSlash(url.toString())
+}
+
+function resolveCompatVersion() {
+  try {
+    const compatPath = path.resolve(repoRoot, 'app_compat.json')
+    const contents = fs.readFileSync(compatPath, 'utf-8')
+    const parsed = JSON.parse(contents)
+    return typeof parsed.compat_version === 'string' && parsed.compat_version.trim()
+      ? parsed.compat_version.trim()
+      : defaultCompatVersion
+  } catch {
+    return defaultCompatVersion
+  }
 }
 
 /**
@@ -51,6 +65,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss(), swVersionStamp()],
+    define: {
+      __CHOREQUEST_COMPAT_VERSION__: JSON.stringify(resolveCompatVersion()),
+    },
     server: {
       port: 5173,
       proxy: {

@@ -77,6 +77,7 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
             select(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,
                 ChoreAssignment.date == today,
+                ChoreAssignment.is_optional == False,
                 ChoreAssignment.status != AssignmentStatus.skipped,
             )
         )
@@ -96,6 +97,7 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
             select(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,
                 ChoreAssignment.date == today,
+                ChoreAssignment.is_optional == False,
                 ChoreAssignment.status != AssignmentStatus.skipped,
             )
         )

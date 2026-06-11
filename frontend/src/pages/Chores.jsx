@@ -4,11 +4,16 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
-import { formatScheduleDays } from '../utils/scheduleDays';
+import { formatScheduleSummary } from '../utils/scheduleDays';
+import {
+  filterKidQuestItems,
+  groupKidQuestAssignments,
+  isActionableStatus,
+  isDoneStatus,
+} from '../utils/kidQuestBoard';
 import Modal from '../components/Modal';
 import QuestCreateModal from '../components/QuestCreateModal';
 import QuestAssignModal from '../components/QuestAssignModal';
-import AvatarDisplay from '../components/AvatarDisplay';
 import {
   Swords,
   Plus,
@@ -20,12 +25,14 @@ import {
   Camera,
   Filter,
   CheckCircle2,
+  Clock,
   Eye,
   EyeOff,
   Loader2,
   Users,
   ScrollText,
   Zap,
+  Sparkles,
 } from 'lucide-react';
 
 const DIFFICULTY_OPTIONS = [
@@ -35,6 +42,11 @@ const DIFFICULTY_OPTIONS = [
   { value: 'expert', label: 'Expert', level: 4 },
 ];
 const DIFFICULTY_LEVEL = { easy: 1, medium: 2, hard: 3, expert: 4 };
+const KID_TABS = [
+  { id: 'today', label: 'Today', icon: Calendar },
+  { id: 'upcoming', label: 'Upcoming', icon: Clock },
+  { id: 'recent', label: 'Recent', icon: CheckCircle2 },
+];
 
 const selectClass =
   'bg-navy-light border border-border text-cream p-2 rounded-md text-sm ' +
@@ -64,28 +76,82 @@ function CategoryBadge({ category }) {
   );
 }
 
-function RecurrenceIndicator({ recurrence, customDays }) {
-  if (!recurrence || recurrence === 'once') return null;
+function ScheduleIndicator({ chore }) {
+  const scheduleType =
+    chore.schedule_type ||
+    (chore.month_day ? 'monthly' : null) ||
+    (chore.recurrence === 'custom' ? 'weekly' : chore.recurrence);
+  const weekdays = chore.weekdays || chore.custom_days;
+  const hasSchedule =
+    chore.schedule_type ||
+    chore.start_date ||
+    chore.month_day ||
+    (Array.isArray(weekdays) && weekdays.length > 0) ||
+    (chore.recurrence && chore.recurrence !== 'once');
+
+  if (!hasSchedule) return null;
+
   return (
     <div className="flex items-center gap-1 text-muted text-xs">
       <RefreshCw size={11} />
-      <span className="capitalize">{recurrence}</span>
-      {recurrence === 'custom' && customDays?.length > 0 && (
-        <span className="text-muted">
-          ({formatScheduleDays(customDays)})
-        </span>
-      )}
+      <span>{formatScheduleSummary({ ...chore, schedule_type: scheduleType, weekdays })}</span>
     </div>
   );
 }
 
-function getMondayOfThisWeek() {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diff);
-  return monday.toISOString().slice(0, 10);
+function formatShortDate(dateStr) {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function kidStatusMeta(item, today) {
+  const status = item.assignment_status || 'pending';
+  if (isActionableStatus(status) && item.assignment_date < today && !item.is_optional) {
+    return { label: 'Missed', className: 'text-crimson border-crimson/30 bg-crimson/10' };
+  }
+  if (status === 'completed') {
+    return { label: 'Awaiting approval', className: 'text-emerald border-emerald/30 bg-emerald/10' };
+  }
+  if (status === 'verified') {
+    return { label: 'Approved', className: 'text-accent border-accent/30 bg-accent/10' };
+  }
+  if (status === 'skipped') {
+    return { label: 'Skipped', className: 'text-muted border-border bg-surface-raised/40' };
+  }
+  if (status === 'missed') {
+    return item.is_optional
+      ? { label: 'Bonus missed', className: 'text-muted border-border bg-surface-raised/40' }
+      : { label: 'Missed', className: 'text-crimson border-crimson/30 bg-crimson/10' };
+  }
+  if (item.is_optional) {
+    return { label: 'Bonus', className: 'text-gold border-gold/30 bg-gold/10' };
+  }
+  if (item.assignment_date > today) {
+    return { label: 'Upcoming', className: 'text-purple border-purple/30 bg-purple/10' };
+  }
+  return { label: 'Ready', className: 'text-gold border-gold/30 bg-gold/10' };
+}
+
+function KidAssignmentMeta({ item, today }) {
+  const dateLabel = item.assignment_date === today
+    ? 'Today'
+    : formatShortDate(item.assignment_date);
+  const status = kidStatusMeta(item, today);
+
+  return (
+    <>
+      <span className="flex items-center gap-1 text-muted text-xs">
+        <Calendar size={11} />
+        {dateLabel}
+      </span>
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${status.className}`}>
+        {status.label}
+      </span>
+    </>
+  );
 }
 
 function todayISO() {
@@ -102,11 +168,13 @@ export default function Chores() {
   const [chores, setChores] = useState([]);
   const [categories, setCategories] = useState([]);
   const [kids, setKids] = useState([]);
-  const [todayAssignments, setTodayAssignments] = useState([]);
+  const [kidAssignments, setKidAssignments] = useState([]);
+  const [kidToday, setKidToday] = useState(todayISO());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [activeTab, setActiveTab] = useState('library');
+  const [activeKidTab, setActiveKidTab] = useState('today');
 
   const [filterCategory, setFilterCategory] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState('');
@@ -123,6 +191,10 @@ export default function Chores() {
   const [photoFiles, setPhotoFiles] = useState({});
 
   const fetchChores = useCallback(async () => {
+    if (isKid) {
+      setChores([]);
+      return;
+    }
     try {
       setError('');
       const data = await api('/api/chores');
@@ -130,18 +202,16 @@ export default function Chores() {
     } catch (err) {
       setError(err.message || 'Failed to load quests.');
     }
-  }, []);
+  }, [isKid]);
 
   const fetchAssignments = useCallback(async () => {
     if (!isKid) return;
     try {
-      const monday = getMondayOfThisWeek();
-      const today = todayISO();
-      const calendarRes = await api(`/api/calendar?week_start=${monday}`);
-      const dayAssignments = (calendarRes.days && calendarRes.days[today]) || [];
-      setTodayAssignments(dayAssignments);
-    } catch {
-      // Non-critical
+      const data = await api('/api/calendar/mine?past_days=14&future_days=28');
+      setKidToday(data.today || todayISO());
+      setKidAssignments(Array.isArray(data.assignments) ? data.assignments : []);
+    } catch (err) {
+      setError(err.message || 'Failed to load your quests.');
     }
   }, [isKid]);
 
@@ -206,34 +276,36 @@ export default function Chores() {
     }
   };
 
-  const assignmentStatusMap = {};
-  if (isKid) {
-    for (const a of todayAssignments) {
-      const cid = a.chore_id || a.chore?.id;
-      if (cid) assignmentStatusMap[cid] = a.status;
-    }
-  }
-
   const libraryChores = chores;
   const activeChores = chores.filter((c) => (c.assignment_count || 0) > 0);
+  const kidQuestGroups = isKid
+    ? groupKidQuestAssignments(kidAssignments, kidToday)
+    : { today: [], upcoming: [], recent: [] };
 
   const currentChores = isParent
     ? (activeTab === 'library' ? libraryChores : activeChores)
-    : chores;
+    : kidQuestGroups[activeKidTab] || [];
 
-  const filteredChores = currentChores.filter((chore) => {
-    if (filterCategory && chore.category?.name !== filterCategory) return false;
-    if (filterDifficulty && chore.difficulty !== filterDifficulty) return false;
-    if (isKid && !showCompleted) {
-      const status = assignmentStatusMap[chore.id];
-      if (status === 'completed' || status === 'verified') return false;
-    }
-    return true;
-  });
+  const filteredChores = isKid
+    ? filterKidQuestItems(currentChores, {
+        category: filterCategory,
+        difficulty: filterDifficulty,
+        showCompleted: activeKidTab === 'today' ? showCompleted : true,
+      })
+    : currentChores.filter((chore) => {
+        if (filterCategory && chore.category?.name !== filterCategory) return false;
+        if (filterDifficulty && chore.difficulty !== filterDifficulty) return false;
+        return true;
+      });
 
   const completedCount = isKid
-    ? Object.values(assignmentStatusMap).filter((s) => s === 'completed' || s === 'verified').length
+    ? kidQuestGroups.today.filter((item) => isDoneStatus(item.assignment_status)).length
     : 0;
+  const kidTabCounts = {
+    today: kidQuestGroups.today.length,
+    upcoming: kidQuestGroups.upcoming.length,
+    recent: kidQuestGroups.recent.length,
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -248,6 +320,18 @@ export default function Chores() {
       setDeleting(false);
     }
   };
+
+  const hasActiveFilters = !!filterCategory || !!filterDifficulty;
+  const kidEmptyMessage = (() => {
+    if (!isKid) return '';
+    if (currentChores.length > 0 && hasActiveFilters) return 'No quests match your filters.';
+    if (activeKidTab === 'today') {
+      if (!showCompleted && completedCount > 0) return "All today's quests are complete.";
+      return 'No quests due today.';
+    }
+    if (activeKidTab === 'upcoming') return 'No upcoming quests scheduled.';
+    return 'No recent quest history.';
+  })();
 
   if (loading) {
     return (
@@ -265,7 +349,7 @@ export default function Chores() {
           {isParent ? 'Quest Management' : 'My Quests'}
         </h1>
         <div className="flex items-center gap-2">
-          {isKid && completedCount > 0 && (
+          {isKid && activeKidTab === 'today' && completedCount > 0 && (
             <button
               onClick={() => setShowCompleted((v) => !v)}
               className="flex items-center gap-1.5 text-muted hover:text-cream text-sm transition-colors"
@@ -323,6 +407,31 @@ export default function Chores() {
         </div>
       )}
 
+      {/* Kid Tabs */}
+      {isKid && (
+        <div className="flex gap-0.5 border-b border-border">
+          {KID_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const active = activeKidTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveKidTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  active
+                    ? 'border-accent text-accent'
+                    : 'border-transparent text-muted hover:text-cream'
+                }`}
+              >
+                <Icon size={14} />
+                {tab.label}
+                <span className="text-xs text-muted">({kidTabCounts[tab.id] || 0})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Filter Bar */}
       <div className="game-panel p-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -357,7 +466,9 @@ export default function Chores() {
       {filteredChores.length === 0 ? (
         <div className="game-panel p-8 text-center">
           <p className="text-muted text-sm">
-            {chores.length === 0
+            {isKid
+              ? kidEmptyMessage
+              : chores.length === 0
               ? 'No quests created yet.'
               : isParent && activeTab === 'active'
               ? 'No active quests. Assign some from the Library.'
@@ -376,15 +487,18 @@ export default function Chores() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filteredChores.map((chore) => {
-            const kidStatus = isKid ? assignmentStatusMap[chore.id] : null;
-            const isDone = kidStatus === 'completed' || kidStatus === 'verified';
-            const isPending = isKid && (kidStatus === 'pending' || kidStatus === 'assigned');
+            const kidStatus = isKid ? chore.assignment_status : null;
+            const isDone = isKid && isDoneStatus(kidStatus);
+            const isPending = isKid &&
+              activeKidTab === 'today' &&
+              isActionableStatus(kidStatus) &&
+              chore.assignment_date === kidToday;
             const isCompleting = completingId === chore.id;
             const assignCount = chore.assignment_count || 0;
 
             return (
               <div
-                key={chore.id}
+                key={isKid ? `${chore.assignment_id}-${chore.id}` : chore.id}
                 className={`game-panel p-3 flex flex-col gap-2 cursor-pointer hover:border-accent/40 transition-colors ${
                   isDone ? 'opacity-50' : ''
                 }`}
@@ -444,16 +558,22 @@ export default function Chores() {
                     <Star size={12} fill="currentColor" />
                     {chore.points} XP
                   </span>
+                  {isKid && chore.is_optional && (
+                    <span className="flex items-center gap-1 text-gold font-medium text-xs">
+                      <Sparkles size={11} />
+                      Bonus
+                    </span>
+                  )}
                   <DifficultyStars level={chore.difficulty || 1} />
                 </div>
 
                 {/* Bottom row */}
                 <div className="flex items-center flex-wrap gap-1.5">
+                  {isKid && (
+                    <KidAssignmentMeta item={chore} today={kidToday} />
+                  )}
                   <CategoryBadge category={chore.category} />
-                  <RecurrenceIndicator
-                    recurrence={chore.recurrence}
-                    customDays={chore.custom_days}
-                  />
+                  <ScheduleIndicator chore={chore} />
                   {chore.requires_photo && (
                     <span className="flex items-center gap-1 text-muted text-xs">
                       <Camera size={11} />

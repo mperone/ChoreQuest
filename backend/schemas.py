@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from pydantic import BaseModel, Field
-from backend.models import UserRole, Difficulty, Recurrence, AssignmentStatus, RedemptionStatus, PointType, NotificationType, RotationCadence
+from backend.models import UserRole, Difficulty, Recurrence, ScheduleType, AssignmentStatus, RedemptionStatus, PointType, NotificationType, RotationCadence
 
 
 # Auth
@@ -114,7 +114,12 @@ class ChoreResponse(BaseModel):
     category: CategoryResponse | None = None
     recurrence: Recurrence
     custom_days: list[int] | None
+    schedule_type: ScheduleType | None = None
+    start_date: date | None = None
+    weekdays: list[int] | None = None
+    month_day: int | None = None
     requires_photo: bool
+    is_optional: bool = False
     is_active: bool
     created_by: int
     created_at: datetime
@@ -133,6 +138,7 @@ class AssignmentResponse(BaseModel):
     verified_by: int | None
     photo_proof_path: str | None
     feedback: str | None = None
+    is_optional: bool = False
     chore: ChoreResponse | None = None
     user: UserResponse | None = None
 
@@ -337,9 +343,14 @@ class EventResponse(BaseModel):
 # Assignment Rules
 class AssignmentRuleItem(BaseModel):
     user_id: int
-    recurrence: Recurrence
+    recurrence: Recurrence = Recurrence.once
     custom_days: list[int] | None = None
+    schedule_type: ScheduleType | None = None
+    start_date: date | None = None
+    weekdays: list[int] | None = None
+    month_day: int | None = None
     requires_photo: bool = False
+    is_optional: bool = False
 
 
 class AssignmentRuleRotation(BaseModel):
@@ -355,7 +366,12 @@ class ChoreAssignRequest(BaseModel):
 class AssignmentRuleUpdate(BaseModel):
     recurrence: Recurrence | None = None
     custom_days: list[int] | None = None
+    schedule_type: ScheduleType | None = None
+    start_date: date | None = None
+    weekdays: list[int] | None = None
+    month_day: int | None = None
     requires_photo: bool | None = None
+    is_optional: bool | None = None
     is_active: bool | None = None
 
 
@@ -365,7 +381,12 @@ class AssignmentRuleResponse(BaseModel):
     user_id: int
     recurrence: Recurrence
     custom_days: list[int] | None
+    schedule_type: ScheduleType | None = None
+    start_date: date | None = None
+    weekdays: list[int] | None = None
+    month_day: int | None = None
     requires_photo: bool
+    is_optional: bool = False
     is_active: bool
     user: UserResponse | None = None
 
@@ -469,26 +490,6 @@ class SettingsUpdate(BaseModel):
     settings: dict[str, str]
 
 
-# Shoutouts
-class ShoutoutCreate(BaseModel):
-    to_user_id: int
-    message: str = Field(max_length=200)
-    emoji: str = Field(max_length=10, default="star")
-
-
-class ShoutoutResponse(BaseModel):
-    id: int
-    from_user_id: int
-    from_user_name: str | None = None
-    to_user_id: int
-    to_user_name: str | None = None
-    message: str
-    emoji: str
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 # Vacation
 class VacationCreate(BaseModel):
     start_date: date
@@ -501,27 +502,6 @@ class VacationResponse(BaseModel):
     end_date: date
     created_by: int
     is_active: bool
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-# Announcements (Bulletin Board)
-class AnnouncementCreate(BaseModel):
-    title: str = Field(max_length=200)
-    message: str = Field(max_length=1000)
-    icon: str | None = None
-    is_pinned: bool = False
-
-
-class AnnouncementResponse(BaseModel):
-    id: int
-    title: str
-    message: str
-    icon: str | None
-    is_pinned: bool
-    created_by: int
-    creator_name: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

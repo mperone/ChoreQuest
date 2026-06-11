@@ -26,7 +26,16 @@ class Recurrence(str, enum.Enum):
     daily = "daily"
     weekly = "weekly"
     fortnightly = "fortnightly"
+    monthly = "monthly"
     custom = "custom"
+
+
+class ScheduleType(str, enum.Enum):
+    once = "once"
+    daily = "daily"
+    weekly = "weekly"
+    fortnightly = "fortnightly"
+    monthly = "monthly"
 
 
 class AssignmentStatus(str, enum.Enum):
@@ -184,6 +193,7 @@ class ChoreAssignment(Base):
     verified_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     photo_proof_path: Mapped[str | None] = mapped_column(String, nullable=True)
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_optional: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -227,7 +237,12 @@ class ChoreAssignmentRule(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     recurrence: Mapped[Recurrence] = mapped_column(Enum(Recurrence), nullable=False)
     custom_days: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    schedule_type: Mapped[ScheduleType | None] = mapped_column(Enum(ScheduleType), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    weekdays: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    month_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     requires_photo: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_optional: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

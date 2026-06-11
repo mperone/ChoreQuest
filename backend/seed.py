@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models import (
     ChoreCategory, Achievement, AppSetting, Chore, ChoreAssignment,
     ChoreAssignmentRule, QuestTemplate, User, UserRole, Difficulty, Recurrence,
-    AssignmentStatus, AvatarItem, AvatarItemRarity, AvatarUnlockMethod,
+    ScheduleType, AssignmentStatus, AvatarItem, AvatarItemRarity, AvatarUnlockMethod,
 )
 
 DEFAULT_CATEGORIES = [
@@ -418,11 +418,36 @@ async def seed_database(db: AsyncSession):
             )
             kid_ids = list(kid_result.scalars().all())
             for kid_id in kid_ids:
+                if chore.recurrence == Recurrence.custom:
+                    schedule_type = ScheduleType.weekly
+                    start_date = today
+                    weekdays = sorted(chore.custom_days or [today.weekday()])
+                    month_day = None
+                elif chore.recurrence in (Recurrence.weekly, Recurrence.fortnightly):
+                    schedule_type = ScheduleType(chore.recurrence.value)
+                    start_date = chore.created_at.date()
+                    weekdays = [chore.created_at.weekday()]
+                    month_day = None
+                elif chore.recurrence == Recurrence.monthly:
+                    schedule_type = ScheduleType.monthly
+                    start_date = chore.created_at.date()
+                    weekdays = None
+                    month_day = start_date.day
+                else:
+                    schedule_type = ScheduleType(chore.recurrence.value)
+                    start_date = today if chore.recurrence == Recurrence.once else chore.created_at.date()
+                    weekdays = None
+                    month_day = None
+
                 db.add(ChoreAssignmentRule(
                     chore_id=chore.id,
                     user_id=kid_id,
                     recurrence=chore.recurrence,
                     custom_days=chore.custom_days,
+                    schedule_type=schedule_type,
+                    start_date=start_date,
+                    weekdays=weekdays,
+                    month_day=month_day,
                     requires_photo=chore.requires_photo,
                     is_active=True,
                 ))

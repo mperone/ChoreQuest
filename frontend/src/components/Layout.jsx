@@ -6,6 +6,7 @@ import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
 import { useNotifications } from '../hooks/useNotifications';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import { DEFAULT_NAV_PATHS, fallbackBackPath, shouldShowBackButton } from '../utils/navigation';
 import {
   Bell,
   Swords,
@@ -14,10 +15,8 @@ import {
   Home,
   CheckCheck,
   X,
-  Sparkles,
   ArrowLeft,
   Loader2,
-  Users,
   Trophy,
   MoreHorizontal,
 } from 'lucide-react';
@@ -26,11 +25,9 @@ import AvatarDisplay from './AvatarDisplay';
 const ALL_NAV_ITEMS = [
   { label: 'Home', icon: Home, path: '/' },
   { label: 'Quests', icon: Swords, path: '/chores' },
-  { label: 'Party', icon: Users, path: '/party', mobileMore: true },
-  { label: 'Leaderboard', icon: Trophy, path: '/leaderboard', settingKey: 'leaderboard_enabled', mobileMore: true },
+  { label: 'Progress', icon: Trophy, path: '/leaderboard', settingKey: 'leaderboard_enabled', mobileMore: true },
   { label: 'Rewards', icon: Gift, path: '/rewards' },
   { label: 'Calendar', icon: CalendarDays, path: '/calendar', mobileMore: true },
-  { label: 'Events', icon: Sparkles, path: '/events', parentOnly: true, mobileMore: true },
 ];
 
 function timeAgo(dateStr) {
@@ -103,8 +100,18 @@ export default function Layout({ children }) {
   const primaryNavItems = navItems.filter((item) => !item.mobileMore);
   const moreNavItems = navItems.filter((item) => item.mobileMore);
   const isHome = location.pathname === '/';
+  const navPaths = DEFAULT_NAV_PATHS;
+  const showBackButton = !isHome && shouldShowBackButton(location.pathname, navPaths);
 
   const isActive = (path) => path === '/' ? location.pathname === '/' : (location.pathname === path || location.pathname.startsWith(path + '/'));
+  const goBack = () => {
+    const historyIndex = window.history.state?.idx;
+    if (typeof historyIndex === 'number' && historyIndex > 0) {
+      navigate(-1);
+    } else {
+      navigate(fallbackBackPath(location.pathname), { replace: true });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-navy flex overflow-x-clip max-w-[100vw]">
@@ -167,9 +174,9 @@ export default function Layout({ children }) {
         {/* Top Bar */}
         <header className="sticky top-0 z-20 bg-surface border-b border-border px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {!isHome && (
+            {showBackButton && (
               <button
-                onClick={() => navigate(-1)}
+                onClick={goBack}
                 className="p-1.5 rounded-md hover:bg-surface-raised transition-colors text-muted hover:text-cream"
                 aria-label="Go back"
               >

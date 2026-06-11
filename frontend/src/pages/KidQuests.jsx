@@ -10,10 +10,12 @@ import {
   Camera,
   Swords,
   SkipForward,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
+import { assignmentActionState } from '../utils/assignmentActions';
 import AvatarDisplay from '../components/AvatarDisplay';
 
 const STATUS_CONFIG = {
@@ -59,27 +61,27 @@ export default function KidQuests() {
     setActionLoading((prev) => ({ ...prev, [key]: busy }));
   };
 
-  const handleVerify = async (choreId) => {
-    const key = `verify-${choreId}`;
+  const handleApprove = async (assignmentId) => {
+    const key = `approve-${assignmentId}`;
     setActionBusy(key, true);
     try {
-      await api(`/api/chores/${choreId}/verify`, { method: 'POST' });
+      await api(`/api/chores/assignments/${assignmentId}/approve`, { method: 'POST' });
       await fetchData();
     } catch (err) {
-      setError(err.message || 'Failed to verify quest');
+      setError(err.message || 'Failed to approve quest');
     } finally {
       setActionBusy(key, false);
     }
   };
 
-  const handleReject = async (choreId) => {
-    const key = `reject-${choreId}`;
+  const handleNeedsWork = async (assignmentId) => {
+    const key = `needs-work-${assignmentId}`;
     setActionBusy(key, true);
     try {
-      await api(`/api/chores/${choreId}/uncomplete`, { method: 'POST' });
+      await api(`/api/chores/assignments/${assignmentId}/needs-work`, { method: 'POST' });
       await fetchData();
     } catch (err) {
-      setError(err.message || 'Failed to reject quest');
+      setError(err.message || 'Failed to send quest back');
     } finally {
       setActionBusy(key, false);
     }
@@ -108,7 +110,8 @@ export default function KidQuests() {
   if (!data) return null;
 
   const { kid, assignments } = data;
-  const completedCount = assignments.filter(
+  const requiredAssignments = assignments.filter((a) => !a.is_optional);
+  const completedCount = requiredAssignments.filter(
     (a) => a.status === 'completed' || a.status === 'verified'
   ).length;
 
@@ -140,7 +143,9 @@ export default function KidQuests() {
               )}
             </div>
             <p className="text-muted text-xs mt-1">
-              {completedCount}/{assignments.length} quests done today
+              {requiredAssignments.length > 0
+                ? `${completedCount}/${requiredAssignments.length} required quests done today`
+                : 'No required quests today'}
             </p>
           </div>
         </div>
@@ -168,11 +173,12 @@ export default function KidQuests() {
             const StatusIcon = cfg.icon;
             const isCompleted = a.status === 'completed';
             const isVerified = a.status === 'verified';
-            const verifyKey = `verify-${a.chore_id}`;
-            const rejectKey = `reject-${a.chore_id}`;
-            const isVerifying = actionLoading[verifyKey];
-            const isRejecting = actionLoading[rejectKey];
-            const isBusy = isVerifying || isRejecting;
+            const actions = assignmentActionState(a);
+            const approveKey = `approve-${a.id}`;
+            const needsWorkKey = `needs-work-${a.id}`;
+            const isApproving = actionLoading[approveKey];
+            const isSendingBack = actionLoading[needsWorkKey];
+            const isBusy = isApproving || isSendingBack;
 
             return (
               <div
@@ -185,10 +191,13 @@ export default function KidQuests() {
                     onClick={() => navigate(`/chores/${a.chore_id}`)}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-cream text-sm font-medium truncate">
+                      <h3
+                        className="text-cream text-sm font-medium break-words"
+                        title={themedTitle(a.chore.title, colorTheme)}
+                      >
                         {themedTitle(a.chore.title, colorTheme)}
                       </h3>
-                      {a.chore.requires_photo && (
+                      {(a.requires_photo || a.chore.requires_photo) && (
                         <Camera size={12} className="text-accent flex-shrink-0" />
                       )}
                     </div>
@@ -202,6 +211,12 @@ export default function KidQuests() {
                         <Star size={11} fill="currentColor" />
                         {a.chore.points} XP
                       </span>
+                      {a.is_optional && (
+                        <span className="flex items-center gap-1 text-gold text-xs font-semibold">
+                          <Sparkles size={11} />
+                          Bonus
+                        </span>
+                      )}
                       {a.chore.category && (
                         <span className="text-muted text-xs capitalize">
                           {a.chore.category}
@@ -214,16 +229,16 @@ export default function KidQuests() {
                     </div>
                   </div>
 
-                  {/* Approve / Reject buttons for completed quests */}
+                  {/* Parent approval buttons */}
                   {isCompleted && (
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button
                         className="game-btn game-btn-blue !px-3 !py-2"
-                        disabled={isBusy}
-                        onClick={() => handleVerify(a.chore_id)}
+                        disabled={isBusy || !actions.canApprove}
+                        onClick={() => handleApprove(a.id)}
                         title="Approve"
                       >
-                        {isVerifying ? (
+                        {isApproving ? (
                           <Loader2 size={14} className="animate-spin" />
                         ) : (
                           <CheckCircle2 size={16} />
@@ -231,11 +246,11 @@ export default function KidQuests() {
                       </button>
                       <button
                         className="game-btn game-btn-red !px-3 !py-2"
-                        disabled={isBusy}
-                        onClick={() => handleReject(a.chore_id)}
-                        title="Reject"
+                        disabled={isBusy || !actions.canSendBack}
+                        onClick={() => handleNeedsWork(a.id)}
+                        title="Needs work"
                       >
-                        {isRejecting ? (
+                        {isSendingBack ? (
                           <Loader2 size={14} className="animate-spin" />
                         ) : (
                           <XCircle size={16} />
@@ -251,7 +266,7 @@ export default function KidQuests() {
                 </div>
 
                 {/* Photo proof */}
-                {a.photo_proof_path && isCompleted && (
+                {a.photo_proof_path && (
                   <div className="mt-3">
                     <img
                       src={`/api/uploads/${a.photo_proof_path}`}

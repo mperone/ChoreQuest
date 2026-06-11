@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import Modal from '../components/Modal';
@@ -15,7 +14,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  ArrowLeft,
   Loader2,
   Eye,
   EyeOff,
@@ -669,7 +667,6 @@ function AuditLogTab() {
 // ─── Main AdminDashboard ─────────────────────────────────────────────
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('users');
 
   if (user?.role !== 'admin') {
@@ -688,14 +685,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="w-full max-w-2xl mx-auto overflow-hidden">
-      {/* Back + Header */}
-      <button
-        onClick={() => navigate('/profile')}
-        className="flex items-center gap-1.5 text-muted hover:text-cream transition-colors mb-4 text-sm"
-      >
-        <ArrowLeft size={16} />
-        Profile
-      </button>
       <div className="flex items-center gap-3 mb-6">
         <Shield size={24} className="text-accent" />
         <h1 className="text-cream text-lg font-semibold">

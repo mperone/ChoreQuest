@@ -15,6 +15,7 @@ import {
   HandHeart,
   Gamepad2,
   ShieldOff,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -201,8 +202,9 @@ export default function KidDashboard() {
     );
   }
 
-  const completedCount = assignments.filter(a => a.status === 'verified' || a.status === 'completed').length;
-  const totalCount = assignments.length;
+  const requiredAssignments = assignments.filter((a) => !a.is_optional);
+  const completedCount = requiredAssignments.filter(a => a.status === 'verified' || a.status === 'completed').length;
+  const totalCount = requiredAssignments.length;
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const activeTheme = getTheme(boardTheme);
@@ -250,11 +252,11 @@ export default function KidDashboard() {
           {myStats?.pet && <PetLevelBadge pet={myStats.pet} compact />}
         </div>
 
-        {/* Progress bar */}
+        {/* Required quest progress bar */}
         {totalCount > 0 && (
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-muted text-xs font-medium">Today's Progress</span>
+              <span className="text-muted text-xs font-medium">Required Progress</span>
               <span className="text-cream text-xs font-bold">{completedCount}/{totalCount}</span>
             </div>
             <div className="xp-bar">
@@ -306,7 +308,7 @@ export default function KidDashboard() {
       {(() => {
         const pendingAssignments = assignments.filter(
           (a) => a.status === 'pending' || a.status === 'assigned'
-        );
+        ).sort((a, b) => Number(a.is_optional) - Number(b.is_optional));
 
         if (pendingAssignments.length === 0 && !loading) {
           return (
@@ -319,7 +321,9 @@ export default function KidDashboard() {
               <p className="text-muted text-sm">
                 {assignments.length === 0
                   ? 'No quests for today. Take a break!'
-                  : 'All quests complete! Time to spin the wheel!'}
+                  : totalCount === 0
+                  ? 'No required quests today. Bonus quests are optional.'
+                  : 'All required quests complete! Time to spin the wheel!'}
               </p>
             </motion.div>
           );
@@ -372,6 +376,13 @@ export default function KidDashboard() {
                           <Star size={12} fill="currentColor" />
                           {chore.points} XP
                         </span>
+
+                        {assignment.is_optional && (
+                          <span className="inline-flex items-center gap-1 text-gold text-xs font-semibold">
+                            <Sparkles size={11} />
+                            Bonus
+                          </span>
+                        )}
 
                         {/* Difficulty */}
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${diff.color}`}>
@@ -546,8 +557,8 @@ export default function KidDashboard() {
         <div className="game-panel p-3 flex items-center gap-3">
           <ShieldOff size={16} className="text-accent flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-cream text-xs font-medium">Streak Freeze Available</p>
-            <p className="text-muted text-[10px]">Your streak will be saved once if you miss a day this month</p>
+            <p className="text-cream text-xs font-medium">Streak Save Ready</p>
+            <p className="text-muted text-[10px]">One missed required day can be forgiven this month</p>
           </div>
         </div>
       )}

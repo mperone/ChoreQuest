@@ -63,6 +63,7 @@ async def get_progress(
             ChoreAssignment.user_id.in_(user_ids),
             ChoreAssignment.date >= start,
             ChoreAssignment.date <= today,
+            ChoreAssignment.is_optional == False,
             ChoreAssignment.status.in_([
                 AssignmentStatus.completed, AssignmentStatus.verified,
             ]),
@@ -81,6 +82,7 @@ async def get_progress(
             ChoreAssignment.user_id.in_(user_ids),
             ChoreAssignment.date >= start,
             ChoreAssignment.date <= today,
+            ChoreAssignment.is_optional == False,
         )
         .group_by(ChoreAssignment.date)
     )

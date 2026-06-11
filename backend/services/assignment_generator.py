@@ -29,8 +29,54 @@ from backend.services.rotation import (
 logger = logging.getLogger(__name__)
 
 
+def _value(value):
+    return value.value if hasattr(value, "value") else value
+
+
+def _created_at_date(chore: Chore) -> date:
+    return chore.created_at.date() if hasattr(chore.created_at, "date") else chore.created_at
+
+
+def _rule_runs_on_day(rule: ChoreAssignmentRule, chore: Chore, day: date) -> bool:
+    return should_create_on_day(
+        rule.recurrence,
+        day,
+        chore.created_at.weekday(),
+        rule.custom_days,
+        created_at_date=_created_at_date(chore),
+        schedule_type=rule.schedule_type,
+        start_date=rule.start_date,
+        weekdays=rule.weekdays,
+        month_day=rule.month_day,
+    )
+
+
+def _rule_active_weekdays(rule: ChoreAssignmentRule, chore: Chore) -> list[int] | None:
+    schedule_type = _value(rule.schedule_type)
+    if schedule_type in {"daily", "monthly"}:
+        return None
+    if schedule_type == "once":
+        return []
+    if schedule_type in {"weekly", "fortnightly"}:
+        if rule.weekdays:
+            return sorted(set(rule.weekdays))
+        if rule.start_date:
+            return [rule.start_date.weekday()]
+        return [chore.created_at.weekday()]
+
+    if rule.recurrence in (Recurrence.once,):
+        return []
+    if rule.recurrence == Recurrence.daily:
+        return None
+    if rule.recurrence == Recurrence.custom and rule.custom_days:
+        return sorted(set(rule.custom_days))
+    if rule.recurrence in (Recurrence.weekly, Recurrence.fortnightly):
+        return [chore.created_at.weekday()]
+    return []
+
+
 async def auto_generate_week_assignments(
-    db: AsyncSession, week_start: date
+    db: AsyncSession, week_start: date, start_date: date | None = None
 ) -> None:
     """Generate ChoreAssignment records for recurring chores across a week.
 
@@ -39,9 +85,17 @@ async def auto_generate_week_assignments(
 
     This function does NOT advance rotations -- it reads the current
     rotation state and projects forward (useful for calendar views).
+
+    When ``start_date`` is provided, only dates on or after that day are
+    generated. Calendar views omit this so they can display complete weeks;
+    assignment-list views use it to avoid creating stale past rows.
     """
     week_end = week_start + timedelta(days=6)
     week_dates = [week_start + timedelta(days=i) for i in range(7)]
+    if start_date is not None:
+        week_dates = [d for d in week_dates if d >= start_date]
+    if not week_dates:
+        return
 
     # Filter out vacation days from week generation
     from backend.routers.vacation import is_vacation_day
@@ -50,8 +104,12 @@ async def auto_generate_week_assignments(
         if not await is_vacation_day(db, d):
             active_dates.append(d)
     week_dates = active_dates
+    if not week_dates:
+        return
 
-    exclusion_set = await _load_exclusion_set(db, week_start, week_end)
+    exclusion_set = await _load_exclusion_set(
+        db, min(week_dates), min(week_end, max(week_dates)),
+    )
 
     chores = await _load_active_chores(db)
 
@@ -95,19 +153,9 @@ async def generate_daily_assignments(db: AsyncSession, today: date) -> None:
 
             # Pre-compute which rules fire today so we know whether
             # the chore has an occurrence before advancing rotation.
-            created_wd = chore.created_at.weekday()
-            created_dt = (
-                chore.created_at.date()
-                if hasattr(chore.created_at, "date")
-                else chore.created_at
-            )
             active_rules = [
                 r for r in rules
-                if r.recurrence != Recurrence.once
-                and should_create_on_day(
-                    r.recurrence, today, created_wd, r.custom_days,
-                    created_at_date=created_dt,
-                )
+                if _rule_runs_on_day(r, chore, today)
             ]
 
             # Only advance rotation on days the chore actually runs
@@ -121,7 +169,9 @@ async def generate_daily_assignments(db: AsyncSession, today: date) -> None:
                 ):
                     continue
 
-                await _create_if_missing(db, chore.id, rule.user_id, today)
+                await _create_if_missing(
+                    db, chore.id, rule.user_id, today, is_optional=rule.is_optional,
+                )
         else:
             # Legacy: chore-level recurrence
             if chore.recurrence == Recurrence.once:
@@ -226,7 +276,12 @@ async def _remove_stale_rotation_assignment(
 
 
 async def _create_if_missing(
-    db: AsyncSession, chore_id: int, user_id: int, day: date
+    db: AsyncSession,
+    chore_id: int,
+    user_id: int,
+    day: date,
+    *,
+    is_optional: bool = False,
 ) -> bool:
     """Create a pending assignment if one doesn't already exist.
 
@@ -239,18 +294,72 @@ async def _create_if_missing(
             ChoreAssignment.date == day,
         )
     )
-    if existing.scalar_one_or_none() is None:
+    existing_assignment = existing.scalar_one_or_none()
+    if existing_assignment is None:
         db.add(
             ChoreAssignment(
                 chore_id=chore_id,
                 user_id=user_id,
                 date=day,
                 status=AssignmentStatus.pending,
+                is_optional=is_optional,
             )
         )
         logger.debug("Created assignment: chore=%d user=%d day=%s", chore_id, user_id, day)
         return True
+    if existing_assignment.status == AssignmentStatus.pending:
+        existing_assignment.is_optional = is_optional
     return False
+
+
+async def _remove_stale_pending_assignments_for_week(
+    db: AsyncSession,
+    chore: Chore,
+    rules: list[ChoreAssignmentRule],
+    rotation: ChoreRotation | None,
+    week_dates: list[date],
+    exclusion_set: set[tuple[int, int, date]],
+    active_weekdays: list[int] | None,
+    reference_day: date,
+) -> None:
+    """Remove planned rows that no longer match active rules for this week."""
+    if not week_dates:
+        return
+
+    start = min(week_dates)
+    end = max(week_dates)
+    rules_by_user: dict[int, list[ChoreAssignmentRule]] = {}
+    for rule in rules:
+        rules_by_user.setdefault(rule.user_id, []).append(rule)
+
+    result = await db.execute(
+        select(ChoreAssignment).where(
+            ChoreAssignment.chore_id == chore.id,
+            ChoreAssignment.date >= start,
+            ChoreAssignment.date <= end,
+            ChoreAssignment.status == AssignmentStatus.pending,
+        )
+    )
+
+    for assignment in result.scalars().all():
+        if (chore.id, assignment.user_id, assignment.date) in exclusion_set:
+            await db.delete(assignment)
+            continue
+
+        user_rules = rules_by_user.get(assignment.user_id, [])
+        should_keep = any(
+            _rule_runs_on_day(rule, chore, assignment.date)
+            for rule in user_rules
+        )
+
+        if should_keep and rotation and rotation.kid_ids:
+            expected_kid = get_rotation_kid_for_day(
+                rotation, assignment.date, reference_day, active_weekdays,
+            )
+            should_keep = int(assignment.user_id) == expected_kid
+
+        if not should_keep:
+            await db.delete(assignment)
 
 
 async def _generate_from_rules(
@@ -273,15 +382,20 @@ async def _generate_from_rules(
     else:
         reference_day = date.today()
 
-    for rule in rules:
-        if rule.recurrence == Recurrence.once:
-            continue
+    await _remove_stale_pending_assignments_for_week(
+        db,
+        chore,
+        rules,
+        rotation,
+        week_dates,
+        exclusion_set,
+        active_weekdays,
+        reference_day,
+    )
 
+    for rule in rules:
         for day in week_dates:
-            if not should_create_on_day(
-                rule.recurrence, day, chore.created_at.weekday(), rule.custom_days,
-                created_at_date=chore.created_at.date() if hasattr(chore.created_at, 'date') else chore.created_at,
-            ):
+            if not _rule_runs_on_day(rule, chore, day):
                 continue
 
             # Rotation filtering
@@ -300,7 +414,9 @@ async def _generate_from_rules(
             if (chore.id, rule.user_id, day) in exclusion_set:
                 continue
 
-            await _create_if_missing(db, chore.id, rule.user_id, day)
+            await _create_if_missing(
+                db, chore.id, rule.user_id, day, is_optional=rule.is_optional,
+            )
 
 
 def _collect_active_weekdays(
@@ -312,14 +428,10 @@ def _collect_active_weekdays(
     """
     weekdays: set[int] = set()
     for rule in rules:
-        if rule.recurrence in (Recurrence.once,):
-            continue
-        if rule.recurrence == Recurrence.daily:
+        rule_weekdays = _rule_active_weekdays(rule, chore)
+        if rule_weekdays is None:
             return None  # Runs every day — calendar-day counting is fine
-        if rule.recurrence == Recurrence.custom and rule.custom_days:
-            weekdays.update(rule.custom_days)
-        elif rule.recurrence in (Recurrence.weekly, Recurrence.fortnightly):
-            weekdays.add(chore.created_at.weekday())
+        weekdays.update(rule_weekdays)
     return sorted(weekdays) if weekdays else None
 
 

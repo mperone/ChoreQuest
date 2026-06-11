@@ -8,7 +8,7 @@ import {
   Shield,
   Loader2,
   Award,
-  ArrowLeft,
+  Sparkles,
 } from 'lucide-react';
 import VacationSettings from '../components/VacationSettings';
 
@@ -147,14 +147,6 @@ export default function Settings() {
 
   return (
     <div className="w-full max-w-2xl mx-auto overflow-hidden">
-      {/* Back + Header */}
-      <button
-        onClick={() => navigate('/profile')}
-        className="flex items-center gap-1.5 text-muted hover:text-cream transition-colors mb-4 text-sm"
-      >
-        <ArrowLeft size={16} />
-        Profile
-      </button>
       <div className="flex items-center gap-3 mb-6">
         <CogIcon size={24} className="text-cream" />
         <h1 className="text-cream text-lg font-semibold">
@@ -193,7 +185,7 @@ export default function Settings() {
               <ToggleSwitch
                 enabled={settings.leaderboard_enabled ?? true}
                 onChange={(v) => updateSetting('leaderboard_enabled', v)}
-                label="Leaderboard"
+                label="Progress Page"
               />
               <ToggleSwitch
                 enabled={settings.spin_wheel_enabled ?? true}
@@ -227,6 +219,25 @@ export default function Settings() {
               }}
               className="field-input max-w-[120px]"
             />
+          </div>
+
+          <div className="game-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-cream text-sm font-semibold flex items-center gap-2">
+                <Sparkles size={16} className="text-gold" />
+                Bonus XP Events
+              </h2>
+              <p className="text-muted text-xs mt-1">
+                Create temporary multipliers for approved quest XP.
+              </p>
+            </div>
+            <button
+              onClick={() => navigate('/events')}
+              className="game-btn game-btn-gold flex items-center justify-center gap-2"
+            >
+              <Sparkles size={14} />
+              Manage Events
+            </button>
           </div>
 
           {/* Save button */}

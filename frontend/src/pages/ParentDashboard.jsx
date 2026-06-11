@@ -20,6 +20,7 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import AvatarDisplay from '../components/AvatarDisplay';
 import Modal from '../components/Modal';
+import { assignmentActionState } from '../utils/assignmentActions';
 
 export default function ParentDashboard() {
   const { user } = useAuth();
@@ -81,27 +82,27 @@ export default function ParentDashboard() {
     setActionLoading((prev) => ({ ...prev, [key]: busy }));
   };
 
-  const handleVerifyChore = async (choreId) => {
-    const key = `verify-${choreId}`;
+  const handleApproveAssignment = async (assignmentId) => {
+    const key = `approve-${assignmentId}`;
     setActionBusy(key, true);
     try {
-      await api(`/api/chores/${choreId}/verify`, { method: 'POST' });
+      await api(`/api/chores/assignments/${assignmentId}/approve`, { method: 'POST' });
       await fetchData();
     } catch (err) {
-      setError(err.message || 'Failed to verify chore');
+      setError(err.message || 'Failed to approve quest');
     } finally {
       setActionBusy(key, false);
     }
   };
 
-  const handleRejectChore = async (choreId) => {
-    const key = `reject-${choreId}`;
+  const handleNeedsWorkAssignment = async (assignmentId) => {
+    const key = `needs-work-${assignmentId}`;
     setActionBusy(key, true);
     try {
-      await api(`/api/chores/${choreId}/uncomplete`, { method: 'POST' });
+      await api(`/api/chores/assignments/${assignmentId}/needs-work`, { method: 'POST' });
       await fetchData();
     } catch (err) {
-      setError(err.message || 'Failed to reject chore');
+      setError(err.message || 'Failed to send quest back');
     } finally {
       setActionBusy(key, false);
     }
@@ -266,30 +267,37 @@ export default function ParentDashboard() {
 
           <div className="space-y-2">
             {pendingVerifications.map((assignment) => {
-              const verifyKey = `verify-${assignment.chore_id}`;
-              const rejectKey = `reject-${assignment.chore_id}`;
-              const isVerifying = actionLoading[verifyKey];
-              const isRejecting = actionLoading[rejectKey];
-              const isBusy = isVerifying || isRejecting;
+              const approveKey = `approve-${assignment.id}`;
+              const needsWorkKey = `needs-work-${assignment.id}`;
+              const isApproving = actionLoading[approveKey];
+              const isSendingBack = actionLoading[needsWorkKey];
+              const isBusy = isApproving || isSendingBack;
+              const actions = assignmentActionState(assignment);
 
               return (
                 <div
-                  key={`chore-${assignment.id}`}
+                  key={`assignment-${assignment.id}`}
                   className="game-panel p-3"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p
                         className="text-cream text-sm font-medium truncate cursor-pointer hover:text-accent transition-colors"
+                        title={themedTitle(assignment.chore?.title || 'Quest', colorTheme)}
                         onClick={() => navigate(`/chores/${assignment.chore_id}`)}
                       >
-                        {themedTitle(assignment.chore?.title || 'Chore', colorTheme)}
+                        {themedTitle(assignment.chore?.title || 'Quest', colorTheme)}
                       </p>
                       <p className="text-muted text-xs mt-0.5">
                         by {assignment.user?.display_name || 'Kid'}
-                        {assignment.chore?.requires_photo && (
+                        {(assignment.requires_photo || assignment.chore?.requires_photo) && (
                           <span className="inline-flex items-center gap-1 ml-2 text-accent">
                             <Camera size={10} /> Photo
+                          </span>
+                        )}
+                        {assignment.is_optional && (
+                          <span className="inline-flex items-center gap-1 ml-2 text-gold">
+                            <Sparkles size={10} /> Bonus
                           </span>
                         )}
                         <span className="ml-2 text-gold font-medium">+{assignment.chore?.points} XP</span>
@@ -298,11 +306,11 @@ export default function ParentDashboard() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         className="game-btn game-btn-blue !px-2.5 !py-1.5"
-                        disabled={isBusy}
-                        onClick={() => handleVerifyChore(assignment.chore_id)}
+                        disabled={isBusy || !actions.canApprove}
+                        onClick={() => handleApproveAssignment(assignment.id)}
                         title="Approve"
                       >
-                        {isVerifying ? (
+                        {isApproving ? (
                           <Loader2 size={14} className="animate-spin" />
                         ) : (
                           <CheckCircle2 size={14} />
@@ -310,11 +318,11 @@ export default function ParentDashboard() {
                       </button>
                       <button
                         className="game-btn game-btn-red !px-2.5 !py-1.5"
-                        disabled={isBusy}
-                        onClick={() => handleRejectChore(assignment.chore_id)}
-                        title="Reject"
+                        disabled={isBusy || !actions.canSendBack}
+                        onClick={() => handleNeedsWorkAssignment(assignment.id)}
+                        title="Needs work"
                       >
-                        {isRejecting ? (
+                        {isSendingBack ? (
                           <Loader2 size={14} className="animate-spin" />
                         ) : (
                           <XCircle size={14} />

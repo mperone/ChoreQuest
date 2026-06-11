@@ -17,8 +17,10 @@ from backend.seed import seed_database
 from backend.auth import decode_access_token
 from backend.websocket_manager import ws_manager
 from backend.models import RefreshToken, User, UserRole
+from backend.app_version import APP_COMPAT_VERSION
 from backend.services.assignment_generator import generate_daily_assignments
 from backend.services.push_hook import install_push_hooks
+from backend.services.streaks import gap_preserves_streak
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +30,10 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 async def reset_stale_streaks(db, today: date):
     """Reset streaks for kids who didn't complete any quest yesterday.
 
-    Accounts for vacation days — if yesterday was a vacation day, the
-    streak is preserved.  Streak freezes are NOT consumed here because
-    they are consumed at completion-time (see chores.py verify logic).
+    Accounts for vacation days and days with no required quests. Streak
+    freezes are NOT consumed here because they are consumed at
+    completion-time (see chores.py verify logic).
     """
-    from backend.routers.vacation import is_vacation_day
-
     yesterday = today - timedelta(days=1)
     result = await db.execute(
         select(User).where(
@@ -57,16 +57,7 @@ async def reset_stale_streaks(db, today: date):
         if kid.last_streak_date >= yesterday:
             continue
 
-        # Gap is > 1 day. Check if all gap days were vacation days.
-        gap = (today - kid.last_streak_date).days
-        all_vacation = True
-        for offset in range(1, gap):
-            gap_day = kid.last_streak_date + timedelta(days=offset)
-            if not await is_vacation_day(db, gap_day):
-                all_vacation = False
-                break
-
-        if not all_vacation:
+        if not await gap_preserves_streak(db, kid.id, kid.last_streak_date, today):
             logger.info(
                 "Resetting streak for user %s (was %d, last_streak_date=%s)",
                 kid.username, kid.current_streak, kid.last_streak_date,
@@ -153,6 +144,7 @@ async def security_headers(request: Request, call_next):
     )
     if settings.COOKIE_SECURE:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-ChoreQuest-Compat-Version"] = APP_COMPAT_VERSION
     # Prevent browser caching of sw.js so updates are always detected
     if request.url.path == "/sw.js":
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -164,7 +156,7 @@ async def security_headers(request: Request, call_next):
 from backend.routers import (  # noqa: E402
     auth, chores, rewards, points, stats, calendar,
     notifications, admin, avatar, wishlist, events, spin, rotations, uploads, push,
-    shoutouts, vacation, progress, emotes, announcements, pets,
+    vacation, progress, pets,
 )
 
 app.include_router(auth.router)
@@ -182,17 +174,14 @@ app.include_router(spin.router)
 app.include_router(rotations.router)
 app.include_router(uploads.router)
 app.include_router(push.router)
-app.include_router(shoutouts.router)
 app.include_router(vacation.router)
 app.include_router(progress.router)
-app.include_router(emotes.router)
-app.include_router(announcements.router)
 app.include_router(pets.router)
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "compat_version": APP_COMPAT_VERSION}
 
 
 @app.websocket("/ws/{user_id}")

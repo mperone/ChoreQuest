@@ -1,8 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle } from '../utils/questThemeText';
-import { DAY_NAMES, formatScheduleDays, normalizeScheduleDays } from '../utils/scheduleDays';
+import {
+  DAY_NAMES,
+  LAST_DAY_OF_MONTH,
+  formatScheduleSummary,
+  monthDayFromISODate,
+  normalizeMonthDay,
+  normalizeScheduleDays,
+  normalizeScheduleWeekdays,
+  todayISO,
+} from '../utils/scheduleDays';
 import Modal from './Modal';
 import AvatarDisplay from './AvatarDisplay';
 import {
@@ -15,13 +24,15 @@ import {
   RotateCw,
   Loader2,
   CalendarDays,
+  Sparkles,
 } from 'lucide-react';
 
-const FREQUENCY_OPTIONS = [
-  { value: 'once', label: 'One-time' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'fortnightly', label: 'Fortnightly' },
+const SCHEDULE_TYPE_OPTIONS = [
+  { value: 'once', label: 'One time' },
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekly', label: 'Every week' },
+  { value: 'fortnightly', label: 'Every other week' },
+  { value: 'monthly', label: 'Monthly' },
 ];
 const ROTATION_CADENCE_OPTIONS = [
   { value: 'daily', label: 'Daily' },
@@ -34,6 +45,14 @@ const selectClass =
   'bg-navy-light border border-border text-cream p-2 rounded text-sm ' +
   'focus:border-accent focus:outline-none transition-colors';
 
+const MONTH_DAY_OPTIONS = [
+  ...Array.from({ length: 31 }, (_, idx) => ({
+    value: idx + 1,
+    label: `${idx + 1}`,
+  })),
+  { value: LAST_DAY_OF_MONTH, label: 'Last day' },
+];
+
 export default function QuestAssignModal({
   isOpen,
   onClose,
@@ -43,13 +62,15 @@ export default function QuestAssignModal({
 }) {
   const { colorTheme } = useTheme();
 
-  // Per-kid: { [kidId]: { selected, requires_photo } }
+  // Per-kid: { [kidId]: { selected, requires_photo, is_optional } }
   const [kidConfigs, setKidConfigs] = useState({});
   const [expandedKid, setExpandedKid] = useState(null);
 
   // Shared schedule (applies to all selected kids)
-  const [scheduleFrequency, setScheduleFrequency] = useState('once');
-  const [scheduleDays, setScheduleDays] = useState([]);
+  const [scheduleType, setScheduleType] = useState('once');
+  const [scheduleStartDate, setScheduleStartDate] = useState(todayISO());
+  const [scheduleWeekdays, setScheduleWeekdays] = useState([]);
+  const [scheduleMonthDay, setScheduleMonthDay] = useState(monthDayFromISODate(todayISO()));
 
   // Rotation (2+ kids only)
   const [rotationEnabled, setRotationEnabled] = useState(false);
@@ -80,34 +101,65 @@ export default function QuestAssignModal({
           configs[kid.id] = {
             selected: !!existingRule,
             requires_photo: existingRule?.requires_photo || false,
+            is_optional: existingRule?.is_optional || false,
           };
         }
         setKidConfigs(configs);
 
+        const today = todayISO();
+
         // Derive shared schedule from first active rule
         const firstActive = rulesList.find((r) => r.is_active);
         if (firstActive) {
-          if (firstActive.recurrence === 'custom' && firstActive.custom_days?.length) {
-            setScheduleFrequency('daily'); // underlying default for day-picker mode
-            setScheduleDays(normalizeScheduleDays(firstActive.custom_days));
+          const startDate = firstActive.start_date || today;
+          const explicitType = firstActive.schedule_type;
+          if (explicitType) {
+            setScheduleType(explicitType);
+            setScheduleStartDate(startDate);
+            setScheduleWeekdays(
+              normalizeScheduleWeekdays(explicitType, startDate, firstActive.weekdays) || []
+            );
+            setScheduleMonthDay(normalizeMonthDay(firstActive.month_day, startDate));
+          } else if (firstActive.recurrence === 'custom' && firstActive.custom_days?.length) {
+            setScheduleType('weekly');
+            setScheduleStartDate(startDate);
+            setScheduleWeekdays(normalizeScheduleDays(firstActive.custom_days));
+            setScheduleMonthDay(monthDayFromISODate(startDate));
           } else {
-            setScheduleFrequency(firstActive.recurrence || 'once');
-            setScheduleDays([]);
+            const legacyType = firstActive.recurrence || 'once';
+            setScheduleType(legacyType);
+            setScheduleStartDate(startDate);
+            setScheduleWeekdays(
+              normalizeScheduleWeekdays(
+                legacyType,
+                startDate,
+                firstActive.weekdays || firstActive.custom_days
+              ) || []
+            );
+            setScheduleMonthDay(normalizeMonthDay(firstActive.month_day, startDate));
           }
         } else {
-          setScheduleFrequency('once');
-          setScheduleDays([]);
+          setScheduleType('once');
+          setScheduleStartDate(today);
+          setScheduleWeekdays([]);
+          setScheduleMonthDay(monthDayFromISODate(today));
         }
       })
       .catch(() => {
         const configs = {};
         for (const kid of kids) {
-          configs[kid.id] = { selected: false, requires_photo: false };
+          configs[kid.id] = {
+            selected: false,
+            requires_photo: false,
+            is_optional: false,
+          };
         }
         setKidConfigs(configs);
         setHadExistingAssignments(false);
-        setScheduleFrequency('once');
-        setScheduleDays([]);
+        setScheduleType('once');
+        setScheduleStartDate(todayISO());
+        setScheduleWeekdays([]);
+        setScheduleMonthDay(monthDayFromISODate(todayISO()));
       });
 
     // Fetch existing rotation
@@ -153,10 +205,29 @@ export default function QuestAssignModal({
     }));
   };
 
+  const scheduleUsesWeekdays = scheduleType === 'weekly' || scheduleType === 'fortnightly';
+  const scheduleUsesMonthDay = scheduleType === 'monthly';
+
+  const handleScheduleTypeChange = (nextType) => {
+    setScheduleType(nextType);
+    setScheduleWeekdays((prev) => normalizeScheduleWeekdays(nextType, scheduleStartDate, prev) || []);
+    if (nextType === 'monthly') {
+      setScheduleMonthDay(
+        scheduleType === 'monthly'
+          ? (prev) => normalizeMonthDay(prev, scheduleStartDate)
+          : monthDayFromISODate(scheduleStartDate)
+      );
+    }
+  };
+
+  const handleScheduleStartDateChange = (nextDate) => {
+    setScheduleStartDate(nextDate);
+  };
+
   const toggleScheduleDay = (dayIdx) => {
-    setScheduleDays((prev) =>
+    setScheduleWeekdays((prev) =>
       prev.includes(dayIdx)
-        ? prev.filter((d) => d !== dayIdx)
+        ? (prev.length > 1 ? prev.filter((d) => d !== dayIdx) : prev)
         : normalizeScheduleDays([...prev, dayIdx])
     );
   };
@@ -176,25 +247,60 @@ export default function QuestAssignModal({
     });
   };
 
-  // Compute the effective recurrence + custom_days from shared schedule
+  // Compute the canonical schedule plus legacy compatibility fields.
   const getEffectiveSchedule = () => {
-    if (scheduleDays.length > 0) {
-      return { recurrence: 'custom', custom_days: normalizeScheduleDays(scheduleDays) };
-    }
-    return { recurrence: scheduleFrequency, custom_days: null };
+    const startDate = scheduleStartDate || todayISO();
+    const weekdays = normalizeScheduleWeekdays(scheduleType, startDate, scheduleWeekdays);
+    const monthDay = scheduleType === 'monthly'
+      ? normalizeMonthDay(scheduleMonthDay, startDate)
+      : null;
+    return {
+      recurrence: scheduleType,
+      custom_days: weekdays,
+      schedule_type: scheduleType,
+      start_date: startDate,
+      weekdays,
+      month_day: monthDay,
+    };
+  };
+
+  const toggleOptionalAll = () => {
+    const anyOptional = selectedKids.some(([, c]) => c.is_optional);
+    const newValue = !anyOptional;
+    setKidConfigs((prev) => {
+      const next = { ...prev };
+      for (const [kidId, config] of Object.entries(next)) {
+        if (config.selected) {
+          next[kidId] = { ...config, is_optional: newValue };
+        }
+      }
+      return next;
+    });
   };
 
   const handleSubmit = async () => {
     setSubmitting(true);
     setError('');
 
-    const { recurrence, custom_days } = getEffectiveSchedule();
+    const {
+      recurrence,
+      custom_days,
+      schedule_type,
+      start_date,
+      weekdays,
+      month_day,
+    } = getEffectiveSchedule();
 
     let assignments = selectedKids.map(([kidId, config]) => ({
       user_id: Number(kidId),
       recurrence,
       custom_days,
+      schedule_type,
+      start_date,
+      weekdays,
+      month_day,
       requires_photo: config.requires_photo,
+      is_optional: config.is_optional,
     }));
 
     const body = { assignments };
@@ -226,16 +332,14 @@ export default function QuestAssignModal({
 
   const allSelectedHavePhoto = selectedCount > 0 && selectedKids.every(([, c]) => c.requires_photo);
   const someSelectedHavePhoto = selectedCount > 0 && selectedKids.some(([, c]) => c.requires_photo);
-  const hasDaysSelected = scheduleDays.length > 0;
-
-  // Summary text for the schedule
-  const scheduleLabel = (() => {
-    if (hasDaysSelected) {
-      return formatScheduleDays(scheduleDays);
-    }
-    const opt = FREQUENCY_OPTIONS.find((f) => f.value === scheduleFrequency);
-    return opt ? opt.label : scheduleFrequency;
-  })();
+  const allSelectedOptional = selectedCount > 0 && selectedKids.every(([, c]) => c.is_optional);
+  const someSelectedOptional = selectedCount > 0 && selectedKids.some(([, c]) => c.is_optional);
+  const scheduleSummary = formatScheduleSummary({
+    schedule_type: scheduleType,
+    start_date: scheduleStartDate,
+    weekdays: scheduleWeekdays,
+    month_day: scheduleMonthDay,
+  });
 
   return (
     <Modal
@@ -321,6 +425,9 @@ export default function QuestAssignModal({
                     {isSelected && config.requires_photo && (
                       <Camera size={14} className="text-accent flex-shrink-0" />
                     )}
+                    {isSelected && config.is_optional && (
+                      <Sparkles size={14} className="text-gold flex-shrink-0" />
+                    )}
                     {isSelected && (
                       <button
                         type="button"
@@ -332,9 +439,9 @@ export default function QuestAssignModal({
                     )}
                   </div>
 
-                  {/* Expanded: per-kid photo proof only */}
+                  {/* Expanded: per-kid settings */}
                   {isExpanded && (
-                    <div className="px-3 pb-3 border-t border-border/50 pt-3 ml-7">
+                    <div className="px-3 pb-3 border-t border-border/50 pt-3 ml-7 space-y-3">
                       <div className="flex items-center justify-between">
                         <label className="text-muted text-xs font-medium flex items-center gap-1.5">
                           <Camera size={12} />
@@ -363,6 +470,34 @@ export default function QuestAssignModal({
                           />
                         </button>
                       </div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-muted text-xs font-medium flex items-center gap-1.5">
+                          <Sparkles size={12} />
+                          Bonus Quest
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setKidConfigs((prev) => ({
+                              ...prev,
+                              [kid.id]: { ...prev[kid.id], is_optional: !config.is_optional },
+                            }))
+                          }
+                          className={`relative w-10 h-5 rounded-full border transition-colors ${
+                            config.is_optional
+                              ? 'bg-gold/20 border-gold'
+                              : 'bg-navy-light border-border'
+                          }`}
+                        >
+                          <div
+                            className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${
+                              config.is_optional
+                                ? 'left-5 bg-gold'
+                                : 'left-0.5 bg-muted'
+                            }`}
+                          />
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -386,21 +521,17 @@ export default function QuestAssignModal({
               Schedule
             </label>
 
-            {/* Frequency dropdown */}
+            {/* Repeat pattern */}
             <div>
               <label className="block text-muted text-xs font-medium mb-1">
-                Frequency
-                {hasDaysSelected && (
-                  <span className="text-accent ml-1">(overridden by quest days)</span>
-                )}
+                Repeats
               </label>
               <select
-                value={scheduleFrequency}
-                onChange={(e) => setScheduleFrequency(e.target.value)}
-                disabled={hasDaysSelected}
-                className={`${selectClass} w-full${hasDaysSelected ? ' opacity-50 cursor-not-allowed' : ''}`}
+                value={scheduleType}
+                onChange={(e) => handleScheduleTypeChange(e.target.value)}
+                className={`${selectClass} w-full`}
               >
-                {FREQUENCY_OPTIONS.map((opt) => (
+                {SCHEDULE_TYPE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -408,34 +539,67 @@ export default function QuestAssignModal({
               </select>
             </div>
 
-            {/* Day picker */}
+            {/* Start date */}
             <div>
               <label className="block text-muted text-xs font-medium mb-1">
-                Quest Days
-                <span className="text-muted/60 ml-1">(optional)</span>
+                {scheduleType === 'once' ? 'Date' : 'Starts'}
               </label>
-              <div className="flex flex-wrap gap-1.5">
-                {DAY_NAMES.map((day, idx) => (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => toggleScheduleDay(idx)}
-                    className={`px-2.5 py-1.5 rounded border text-xs font-medium transition-colors ${
-                      scheduleDays.includes(idx)
-                        ? 'border-accent bg-accent/20 text-accent'
-                        : 'border-border text-muted hover:border-cream/30'
-                    }`}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-              <p className="text-muted text-xs mt-1">
-                {hasDaysSelected
-                  ? `Quest appears on ${formatScheduleDays(scheduleDays)}.`
-                  : 'Pick specific days, or leave empty to use the frequency above.'}
-              </p>
+              <input
+                type="date"
+                value={scheduleStartDate}
+                onChange={(e) => handleScheduleStartDateChange(e.target.value)}
+                className={`${selectClass} w-full`}
+              />
             </div>
+
+            {/* Weekday picker */}
+            {scheduleUsesWeekdays && (
+              <div>
+                <label className="block text-muted text-xs font-medium mb-1">
+                  Days
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {DAY_NAMES.map((day, idx) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => toggleScheduleDay(idx)}
+                      className={`px-2.5 py-1.5 rounded border text-xs font-medium transition-colors ${
+                        scheduleWeekdays.includes(idx)
+                          ? 'border-accent bg-accent/20 text-accent'
+                          : 'border-border text-muted hover:border-cream/30'
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Month day picker */}
+            {scheduleUsesMonthDay && (
+              <div>
+                <label className="block text-muted text-xs font-medium mb-1">
+                  Day
+                </label>
+                <select
+                  value={scheduleMonthDay}
+                  onChange={(e) => setScheduleMonthDay(Number(e.target.value))}
+                  className={`${selectClass} w-full`}
+                >
+                  {MONTH_DAY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <p className="text-accent text-xs font-medium">
+              {scheduleSummary}
+            </p>
           </div>
         )}
 
@@ -475,6 +639,46 @@ export default function QuestAssignModal({
                 : someSelectedHavePhoto
                 ? 'Some heroes require photo proof. Expand individual settings to adjust.'
                 : 'Heroes can complete this quest without attaching a photo.'}
+            </p>
+          </div>
+        )}
+
+        {/* Optional quest toggle */}
+        {selectedCount > 0 && (
+          <div className="p-3 rounded-lg border border-border bg-surface-raised/20">
+            <div className="flex items-center justify-between">
+              <label className="text-cream text-sm font-medium flex items-center gap-2">
+                <Sparkles size={14} />
+                Bonus Quest
+              </label>
+              <button
+                type="button"
+                onClick={toggleOptionalAll}
+                className={`relative w-12 h-6 rounded-full border transition-colors ${
+                  allSelectedOptional
+                    ? 'bg-gold/20 border-gold'
+                    : someSelectedOptional
+                    ? 'bg-gold/10 border-gold/50'
+                    : 'bg-navy-light border-border'
+                }`}
+              >
+                <div
+                  className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+                    allSelectedOptional
+                      ? 'left-6 bg-gold'
+                      : someSelectedOptional
+                      ? 'left-6 bg-gold/60'
+                      : 'left-0.5 bg-muted'
+                  }`}
+                />
+              </button>
+            </div>
+            <p className="text-muted text-xs mt-1">
+              {allSelectedOptional
+                ? 'All selected heroes can complete this for extra XP, but it will not affect streaks.'
+                : someSelectedOptional
+                ? 'Some selected heroes have this as a bonus quest. Expand individual settings to adjust.'
+                : 'This quest is required for streaks and daily progress.'}
             </p>
           </div>
         )}

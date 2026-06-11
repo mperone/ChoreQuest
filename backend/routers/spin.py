@@ -68,11 +68,12 @@ async def _can_spin_today(db: AsyncSession, user: User) -> tuple[bool, int | Non
     if today_spin is not None:
         return False, last_result, "You already spun the wheel today! Come back tomorrow."
 
-    # Check today's chore assignments
+    # Check today's required chore assignments
     result = await db.execute(
         select(ChoreAssignment).where(
             ChoreAssignment.user_id == user.id,
             ChoreAssignment.date == today,
+            ChoreAssignment.is_optional == False,
         )
     )
     today_assignments = result.scalars().all()
@@ -91,7 +92,7 @@ async def _can_spin_today(db: AsyncSession, user: User) -> tuple[bool, int | Non
             1 for a in today_assignments
             if a.status not in (AssignmentStatus.completed, AssignmentStatus.verified)
         )
-        return False, last_result, f"Complete all of today's quests to unlock the spin! {pending} remaining."
+        return False, last_result, f"Complete all of today's required quests to unlock the spin! {pending} remaining."
     return True, last_result, None
 
 

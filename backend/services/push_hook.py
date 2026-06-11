@@ -33,7 +33,7 @@ _NOTIFICATION_URL_MAP = {
     "trade_denied": "/calendar",
     "reward_approved": "/rewards",
     "reward_denied": "/rewards",
-    "announcement": "/party",
+    "announcement": "/",
     "quest_feedback": "/",
 }
 

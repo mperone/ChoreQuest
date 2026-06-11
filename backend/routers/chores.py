@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, date, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from sqlalchemy import select, and_, func, delete, text
+from sqlalchemy import select, and_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,6 +26,7 @@ from backend.models import (
     Notification,
     NotificationType,
     Recurrence,
+    ScheduleType,
 )
 from backend.schemas import (
     ChoreCreate,
@@ -45,8 +46,13 @@ from backend.config import settings
 from backend.dependencies import get_current_user, require_parent
 from backend.achievements import check_achievements
 from backend.websocket_manager import ws_manager
+from backend.services.assignment_generator import auto_generate_week_assignments
+from backend.services.calendar_windows import monday_week_start, monday_week_starts_to_generate
 from backend.services.recurrence import should_create_on_day
 from backend.services.rotation import get_rotation_kid_for_day
+from backend.services.assignment_cleanup import pending_assignment_is_stale
+from backend.services.optional_quests import assignment_completion_advances_streak
+from backend.services.streaks import gap_preserves_streak
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +65,148 @@ _CATEGORY_CHANGED = {"type": "data_changed", "data": {"entity": "category"}}
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _value(value):
+    return value.value if hasattr(value, "value") else value
+
+
+def _normalize_weekdays(weekdays: list[int] | None) -> list[int]:
+    if not weekdays:
+        return []
+    return sorted({day for day in weekdays if isinstance(day, int) and 0 <= day <= 6})
+
+
+def _normalize_month_day(month_day: int | None, start_date: date) -> int | None:
+    if month_day == -1:
+        return -1
+    if isinstance(month_day, int) and 1 <= month_day <= 31:
+        return month_day
+    return start_date.day
+
+
+def _schedule_from_assignment_item(item, default_start: date) -> dict:
+    schedule_type = item.schedule_type
+    if schedule_type is None:
+        if item.recurrence == Recurrence.custom:
+            schedule_type = ScheduleType.weekly
+        else:
+            schedule_type = ScheduleType(item.recurrence.value)
+
+    start_date = item.start_date or default_start
+    weekdays = None
+    if schedule_type in (ScheduleType.weekly, ScheduleType.fortnightly):
+        weekdays = _normalize_weekdays(item.weekdays or item.custom_days)
+        if not weekdays:
+            weekdays = [start_date.weekday()]
+    month_day = None
+    if schedule_type == ScheduleType.monthly:
+        month_day = _normalize_month_day(item.month_day, start_date)
+
+    recurrence = Recurrence(schedule_type.value)
+    custom_days = weekdays if weekdays else None
+
+    return {
+        "user_id": item.user_id,
+        "recurrence": recurrence,
+        "custom_days": custom_days,
+        "schedule_type": schedule_type,
+        "start_date": start_date,
+        "weekdays": weekdays,
+        "month_day": month_day,
+        "requires_photo": item.requires_photo,
+        "is_optional": item.is_optional,
+    }
+
+
+def _chore_created_date(chore: Chore) -> date:
+    return chore.created_at.date() if hasattr(chore.created_at, "date") else chore.created_at
+
+
+def _schedule_item_runs_on_day(item: dict, chore: Chore, target_day: date) -> bool:
+    return should_create_on_day(
+        item["recurrence"],
+        target_day,
+        chore.created_at.weekday(),
+        item["custom_days"],
+        created_at_date=_chore_created_date(chore),
+        schedule_type=item["schedule_type"],
+        start_date=item["start_date"],
+        weekdays=item["weekdays"],
+        month_day=item["month_day"],
+    )
+
+
+def _active_weekdays_for_schedule_items(assignments: list[dict]) -> list[int] | None:
+    active_weekdays: set[int] = set()
+    for item in assignments:
+        if item["schedule_type"] in (ScheduleType.daily, ScheduleType.monthly):
+            return None
+        if item["weekdays"]:
+            active_weekdays.update(item["weekdays"])
+    return sorted(active_weekdays) if active_weekdays else None
+
+
+def _apply_rule_schedule(data: dict, rule: ChoreAssignmentRule | None) -> dict:
+    if not rule:
+        return data
+
+    data["schedule_type"] = _value(rule.schedule_type)
+    data["start_date"] = rule.start_date
+    data["weekdays"] = rule.weekdays
+    data["month_day"] = rule.month_day
+    data["is_optional"] = rule.is_optional
+    return data
+
+
+async def _remove_stale_pending_assignments_for_schedule(
+    db: AsyncSession,
+    chore: Chore,
+    assignments: list[dict],
+    rotation: ChoreRotation | None,
+    reference_day: date,
+) -> int:
+    """Delete pending rows that no longer match the submitted schedule.
+
+    Completed, verified, skipped, and missed rows are history and are left
+    alone. Pending rows are just planned calendar entries, so they should
+    follow the current assignment rule exactly.
+    """
+    assignments_by_user: dict[int, list[dict]] = {}
+    for item in assignments:
+        assignments_by_user.setdefault(item["user_id"], []).append(item)
+
+    active_weekdays = (
+        _active_weekdays_for_schedule_items(assignments)
+        if rotation and rotation.kid_ids
+        else None
+    )
+
+    result = await db.execute(
+        select(ChoreAssignment).where(
+            ChoreAssignment.chore_id == chore.id,
+            ChoreAssignment.status == AssignmentStatus.pending,
+        )
+    )
+
+    removed = 0
+    for pending in result.scalars().all():
+        user_items = assignments_by_user.get(pending.user_id, [])
+        should_keep = any(
+            _schedule_item_runs_on_day(item, chore, pending.date)
+            for item in user_items
+        )
+
+        if should_keep and rotation and rotation.kid_ids:
+            expected_kid = get_rotation_kid_for_day(
+                rotation, pending.date, reference_day, active_weekdays,
+            )
+            should_keep = int(pending.user_id) == expected_kid
+
+        if not should_keep:
+            await db.delete(pending)
+            removed += 1
+
+    return removed
 
 async def _get_chore_or_404(
     db: AsyncSession,
@@ -222,6 +370,7 @@ async def list_chores(
         # Batch-load rule counts (avoids N+1 per-chore COUNT queries)
         chore_ids = [c.id for c in chores]
         rule_counts: dict[int, int] = {}
+        schedule_rules: dict[int, ChoreAssignmentRule] = {}
         if chore_ids:
             count_result = await db.execute(
                 select(
@@ -236,10 +385,22 @@ async def list_chores(
             )
             rule_counts = {row.chore_id: row.cnt for row in count_result.all()}
 
+            rules_result = await db.execute(
+                select(ChoreAssignmentRule)
+                .where(
+                    ChoreAssignmentRule.chore_id.in_(chore_ids),
+                    ChoreAssignmentRule.is_active == True,
+                )
+                .order_by(ChoreAssignmentRule.id)
+            )
+            for rule in rules_result.scalars().all():
+                schedule_rules.setdefault(rule.chore_id, rule)
+
         enriched = []
         for c in chores:
             data = ChoreResponse.model_validate(c).model_dump()
             data["assignment_count"] = rule_counts.get(c.id, 0)
+            _apply_rule_schedule(data, schedule_rules.get(c.id))
             enriched.append(data)
         return enriched
     else:
@@ -259,6 +420,7 @@ async def list_chores(
         # Batch-load per-kid photo overrides (avoids N+1 per-chore rule queries)
         chore_ids = [c.id for c in chores]
         photo_overrides: dict[int, bool] = {}
+        schedule_rules: dict[int, ChoreAssignmentRule] = {}
         if chore_ids:
             rule_result = await db.execute(
                 select(ChoreAssignmentRule).where(
@@ -269,12 +431,14 @@ async def list_chores(
             )
             for rule in rule_result.scalars().all():
                 photo_overrides[rule.chore_id] = rule.requires_photo
+                schedule_rules[rule.chore_id] = rule
 
         enriched = []
         for c in chores:
             data = ChoreResponse.model_validate(c).model_dump()
             if c.id in photo_overrides:
                 data["requires_photo"] = photo_overrides[c.id]
+            _apply_rule_schedule(data, schedule_rules.get(c.id))
             enriched.append(data)
         return enriched
 
@@ -325,37 +489,69 @@ async def cleanup_all_stale(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_parent),
 ):
-    """Remove ALL stale pending assignments and exclusions across every chore.
+    """Repair planned assignment rows while preserving history and exclusions."""
+    today = date.today()
 
-    This removes:
-    - All pending assignments (past AND future) -- auto-gen will recreate correct ones
-    - All ChoreExclusion records (so auto-gen works fresh)
-    """
-    # Use bulk deletes instead of loading + deleting one by one
-    pending_count_result = await db.execute(
-        select(func.count())
-        .select_from(ChoreAssignment)
+    pending_result = await db.execute(
+        select(ChoreAssignment)
+        .options(selectinload(ChoreAssignment.chore))
         .where(ChoreAssignment.status == AssignmentStatus.pending)
     )
-    pending_count = pending_count_result.scalar() or 0
-    await db.execute(
-        delete(ChoreAssignment).where(
-            ChoreAssignment.status == AssignmentStatus.pending
+    pending_assignments = pending_result.scalars().all()
+
+    rules_result = await db.execute(
+        select(ChoreAssignmentRule).where(
+            ChoreAssignmentRule.is_active == True,
         )
     )
+    rules_by_chore: dict[int, list[ChoreAssignmentRule]] = {}
+    for rule in rules_result.scalars().all():
+        rules_by_chore.setdefault(rule.chore_id, []).append(rule)
 
-    excl_count_result = await db.execute(
-        select(func.count()).select_from(ChoreExclusion)
-    )
-    excl_count = excl_count_result.scalar() or 0
-    await db.execute(delete(ChoreExclusion))
+    exclusions_result = await db.execute(select(ChoreExclusion))
+    exclusion_set = {
+        (e.chore_id, e.user_id, e.date)
+        for e in exclusions_result.scalars().all()
+    }
+
+    rotations_result = await db.execute(select(ChoreRotation))
+    rotations_by_chore = {
+        rotation.chore_id: rotation
+        for rotation in rotations_result.scalars().all()
+    }
+
+    removed = 0
+    for assignment in pending_assignments:
+        rotation = rotations_by_chore.get(assignment.chore_id)
+        reference_day = None
+        if rotation and rotation.last_rotated:
+            reference_day = (
+                rotation.last_rotated.date()
+                if hasattr(rotation.last_rotated, "date")
+                else rotation.last_rotated
+            )
+        if pending_assignment_is_stale(
+            assignment,
+            assignment.chore,
+            rules_by_chore.get(assignment.chore_id, []),
+            exclusion_set=exclusion_set,
+            today=today,
+            rotation=rotation,
+            reference_day=reference_day,
+        ):
+            await db.delete(assignment)
+            removed += 1
 
     await db.commit()
 
+    plural = "" if removed == 1 else "s"
     return {
-        "message": f"Cleaned up {pending_count} pending assignments and {excl_count} exclusions",
-        "pending_removed": pending_count,
-        "exclusions_removed": excl_count,
+        "message": (
+            f"Repaired planned calendar: removed {removed} stale pending "
+            f"assignment{plural}. Preserved {len(exclusion_set)} exclusions."
+        ),
+        "pending_removed": removed,
+        "exclusions_preserved": len(exclusion_set),
     }
 
 
@@ -366,7 +562,61 @@ async def get_chore(
     user: User = Depends(get_current_user),
 ):
     chore = await _get_chore_or_404(db, chore_id, load_category=True)
-    return ChoreResponse.model_validate(chore)
+    data = ChoreResponse.model_validate(chore).model_dump()
+    rule_query = select(ChoreAssignmentRule).where(
+        ChoreAssignmentRule.chore_id == chore_id,
+        ChoreAssignmentRule.is_active == True,
+    )
+    if user.role == UserRole.kid:
+        rule_query = rule_query.where(ChoreAssignmentRule.user_id == user.id)
+    rule_query = rule_query.order_by(ChoreAssignmentRule.id)
+    rule_result = await db.execute(rule_query)
+    _apply_rule_schedule(data, rule_result.scalars().first())
+    return data
+
+
+@router.get("/{chore_id}/assignments", response_model=list[AssignmentResponse])
+async def get_chore_assignments(
+    chore_id: int,
+    past_days: int = Query(14, ge=0, le=90),
+    future_days: int = Query(28, ge=0, le=90),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _get_chore_or_404(db, chore_id)
+
+    today = date.today()
+    start_date = today - timedelta(days=past_days)
+    end_date = today + timedelta(days=future_days)
+
+    current_week_start = monday_week_start(today)
+    for week_start in monday_week_starts_to_generate(today, end_date):
+        await auto_generate_week_assignments(
+            db,
+            week_start,
+            start_date=today if week_start == current_week_start else None,
+        )
+
+    stmt = (
+        select(ChoreAssignment)
+        .join(Chore, ChoreAssignment.chore_id == Chore.id)
+        .options(
+            selectinload(ChoreAssignment.chore).selectinload(Chore.category),
+            selectinload(ChoreAssignment.user),
+        )
+        .where(
+            ChoreAssignment.chore_id == chore_id,
+            ChoreAssignment.date >= start_date,
+            ChoreAssignment.date <= end_date,
+            Chore.is_active == True,
+        )
+        .order_by(ChoreAssignment.date, ChoreAssignment.id)
+    )
+    if user.role == UserRole.kid:
+        stmt = stmt.where(ChoreAssignment.user_id == user.id)
+
+    result = await db.execute(stmt)
+    return [AssignmentResponse.model_validate(a) for a in result.scalars().all()]
 
 
 @router.put("/{chore_id}", response_model=ChoreResponse)
@@ -491,7 +741,11 @@ async def assign_chore(
     chore = await _get_chore_or_404(db, chore_id)
 
     today = date.today()
-    submitted_user_ids = {item.user_id for item in body.assignments}
+    assignments = [
+        _schedule_from_assignment_item(item, today)
+        for item in body.assignments
+    ]
+    submitted_user_ids = {item["user_id"] for item in assignments}
 
     # Deactivate rules for kids NOT in the submitted list
     existing_rules_result = await db.execute(
@@ -524,7 +778,7 @@ async def assign_chore(
     rotation_active = (
         body.rotation
         and body.rotation.enabled
-        and len(body.assignments) >= 2
+        and len(assignments) >= 2
     )
     rot_result = await db.execute(
         select(ChoreRotation).where(ChoreRotation.chore_id == chore_id)
@@ -532,7 +786,7 @@ async def assign_chore(
     existing_rotation = rot_result.scalar_one_or_none()
 
     if rotation_active:
-        kid_ids = [a.user_id for a in body.assignments]
+        kid_ids = [a["user_id"] for a in assignments]
         if existing_rotation:
             existing_rotation.kid_ids = kid_ids
             existing_rotation.cadence = body.rotation.cadence
@@ -550,17 +804,7 @@ async def assign_chore(
             await db.flush()
 
         # Compute active weekdays for occurrence-based rotation projection
-        _active_wd: set[int] = set()
-        _has_daily = False
-        for _item in body.assignments:
-            if _item.recurrence == Recurrence.daily:
-                _has_daily = True
-                break
-            if _item.recurrence == Recurrence.custom and _item.custom_days:
-                _active_wd.update(_item.custom_days)
-            elif _item.recurrence in (Recurrence.weekly, Recurrence.fortnightly):
-                _active_wd.add(chore.created_at.weekday())
-        active_weekdays = sorted(_active_wd) if _active_wd and not _has_daily else None
+        active_weekdays = _active_weekdays_for_schedule_items(assignments)
 
         # Clean stale pending assignments that don't match the new rotation
         stale_result = await db.execute(
@@ -605,51 +849,73 @@ async def assign_chore(
     if rotation_active and existing_rotation and existing_rotation.kid_ids:
         rotation_kid_id = existing_rotation.kid_ids[existing_rotation.current_index]
 
-    for item in body.assignments:
+    removed_stale = await _remove_stale_pending_assignments_for_schedule(
+        db,
+        chore,
+        assignments,
+        existing_rotation if rotation_active else None,
+        today,
+    )
+    if removed_stale:
+        logger.debug(
+            "Removed %d stale pending assignments for chore=%d after schedule update",
+            removed_stale,
+            chore_id,
+        )
+
+    for item in assignments:
         # Verify kid exists
-        kid_result = await db.execute(select(User).where(User.id == item.user_id))
+        kid_result = await db.execute(select(User).where(User.id == item["user_id"]))
         if kid_result.scalar_one_or_none() is None:
-            raise HTTPException(status_code=400, detail=f"User {item.user_id} not found")
+            raise HTTPException(status_code=400, detail=f"User {item['user_id']} not found")
 
         # Upsert assignment rule
         existing = await db.execute(
             select(ChoreAssignmentRule).where(
                 ChoreAssignmentRule.chore_id == chore_id,
-                ChoreAssignmentRule.user_id == item.user_id,
+                ChoreAssignmentRule.user_id == item["user_id"],
             )
         )
         rule = existing.scalar_one_or_none()
         if rule:
-            rule.recurrence = item.recurrence
-            rule.custom_days = item.custom_days
-            rule.requires_photo = item.requires_photo
+            rule.recurrence = item["recurrence"]
+            rule.custom_days = item["custom_days"]
+            rule.schedule_type = item["schedule_type"]
+            rule.start_date = item["start_date"]
+            rule.weekdays = item["weekdays"]
+            rule.month_day = item["month_day"]
+            rule.requires_photo = item["requires_photo"]
+            rule.is_optional = item["is_optional"]
             rule.is_active = True
         else:
             rule = ChoreAssignmentRule(
                 chore_id=chore_id,
-                user_id=item.user_id,
-                recurrence=item.recurrence,
-                custom_days=item.custom_days,
-                requires_photo=item.requires_photo,
+                user_id=item["user_id"],
+                recurrence=item["recurrence"],
+                custom_days=item["custom_days"],
+                schedule_type=item["schedule_type"],
+                start_date=item["start_date"],
+                weekdays=item["weekdays"],
+                month_day=item["month_day"],
+                requires_photo=item["requires_photo"],
+                is_optional=item["is_optional"],
                 is_active=True,
             )
             db.add(rule)
 
         # Create today's assignment if schedule matches
-        create_today = should_create_on_day(
-            item.recurrence, today, chore.created_at.weekday(), item.custom_days,
-        )
+        create_today = _schedule_item_runs_on_day(item, chore, today)
 
         # Rotation filtering: only the current rotation kid gets today's assignment
         if create_today and rotation_kid_id is not None:
-            if int(item.user_id) != int(rotation_kid_id):
+            if int(item["user_id"]) != int(rotation_kid_id):
                 create_today = False
 
         if create_today:
             existing_assignment_result = await db.execute(
                 select(ChoreAssignment).where(
                     ChoreAssignment.chore_id == chore_id,
-                    ChoreAssignment.user_id == item.user_id,
+                    ChoreAssignment.user_id == item["user_id"],
                     ChoreAssignment.date == today,
                 )
             )
@@ -657,10 +923,13 @@ async def assign_chore(
             if existing_assignment is None:
                 db.add(ChoreAssignment(
                     chore_id=chore_id,
-                    user_id=item.user_id,
+                    user_id=item["user_id"],
                     date=today,
                     status=AssignmentStatus.pending,
+                    is_optional=item["is_optional"],
                 ))
+            elif existing_assignment.status == AssignmentStatus.pending:
+                existing_assignment.is_optional = item["is_optional"]
             elif existing_assignment.status in (
                 AssignmentStatus.completed,
                 AssignmentStatus.verified,
@@ -672,17 +941,18 @@ async def assign_chore(
                 existing_assignment.completed_at = None
                 existing_assignment.verified_at = None
                 existing_assignment.verified_by = None
+                existing_assignment.is_optional = item["is_optional"]
                 existing_assignment.updated_at = datetime.now(timezone.utc)
 
-        db.add(_quest_assigned_notification(item.user_id, chore))
+        db.add(_quest_assigned_notification(item["user_id"], chore))
 
     # Sync the chore-level recurrence with the assignment rules so the
     # quest list / detail pages display the correct schedule.
-    if body.assignments:
-        first = body.assignments[0]
-        chore.recurrence = first.recurrence
-        chore.custom_days = first.custom_days
-    elif not body.assignments:
+    if assignments:
+        first = assignments[0]
+        chore.recurrence = first["recurrence"]
+        chore.custom_days = first["custom_days"]
+    elif not assignments:
         # All kids unassigned — reset to once
         chore.recurrence = Recurrence.once
         chore.custom_days = None
@@ -690,7 +960,7 @@ async def assign_chore(
     await db.commit()
     await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=user.id)
 
-    count = len(body.assignments)
+    count = len(assignments)
     if count == 0:
         return {"message": "All heroes unassigned from this quest"}
     return {"message": f"Quest assigned to {count} hero(es)"}
@@ -760,6 +1030,7 @@ async def debug_chore(
                 "user_id": r.user_id,
                 "recurrence": r.recurrence.value,
                 "is_active": r.is_active,
+                "is_optional": r.is_optional,
             }
             for r in rules
         ],
@@ -769,6 +1040,7 @@ async def debug_chore(
                 "user_id": a.user_id,
                 "date": a.date.isoformat(),
                 "status": a.status.value if a.status else None,
+                "is_optional": a.is_optional,
             }
             for a in assignments
         ],
@@ -804,6 +1076,19 @@ async def update_assignment_rule(
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(rule, field, value)
+
+    if "is_optional" in update_data:
+        today = date.today()
+        pending_result = await db.execute(
+            select(ChoreAssignment).where(
+                ChoreAssignment.chore_id == rule.chore_id,
+                ChoreAssignment.user_id == rule.user_id,
+                ChoreAssignment.date >= today,
+                ChoreAssignment.status == AssignmentStatus.pending,
+            )
+        )
+        for assignment in pending_result.scalars().all():
+            assignment.is_optional = rule.is_optional
 
     await db.commit()
     await db.refresh(rule)
@@ -945,37 +1230,66 @@ async def complete_chore(
     return AssignmentResponse.model_validate(assignment)
 
 
-@router.post("/{chore_id}/verify", response_model=AssignmentResponse)
-async def verify_chore(
-    chore_id: int,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_parent),
-):
-    today = date.today()
-    now = datetime.now(timezone.utc)
-
+async def _load_assignment_for_action(
+    db: AsyncSession,
+    assignment_id: int,
+) -> ChoreAssignment:
     result = await db.execute(
         select(ChoreAssignment)
-        .where(
-            ChoreAssignment.chore_id == chore_id,
-            ChoreAssignment.date == today,
-            ChoreAssignment.status == AssignmentStatus.completed,
+        .where(ChoreAssignment.id == assignment_id)
+        .options(
+            selectinload(ChoreAssignment.chore),
+            selectinload(ChoreAssignment.user),
         )
-        .options(selectinload(ChoreAssignment.chore))
     )
     assignment = result.scalar_one_or_none()
     if assignment is None:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    return assignment
+
+
+async def _deactivate_one_time_rule_if_needed(
+    db: AsyncSession,
+    assignment: ChoreAssignment,
+) -> None:
+    rule_result = await db.execute(
+        select(ChoreAssignmentRule).where(
+            ChoreAssignmentRule.chore_id == assignment.chore_id,
+            ChoreAssignmentRule.user_id == assignment.user_id,
+            ChoreAssignmentRule.is_active == True,
+        )
+    )
+    rule = rule_result.scalar_one_or_none()
+    if not rule:
+        return
+
+    rule_schedule_type = _value(rule.schedule_type)
+    if (
+        rule_schedule_type == "once"
+        or (rule_schedule_type is None and rule.recurrence == Recurrence.once)
+    ):
+        rule.is_active = False
+
+
+async def _approve_assignment(
+    db: AsyncSession,
+    assignment: ChoreAssignment,
+    parent: User,
+) -> AssignmentResponse:
+    if assignment.status != AssignmentStatus.completed:
         raise HTTPException(
-            status_code=404,
-            detail="No completed assignment found to verify for this chore today",
+            status_code=400,
+            detail="Only completed assignments can be approved",
         )
 
+    now = datetime.now(timezone.utc)
+    today = date.today()
     chore = assignment.chore
     base_points = chore.points
 
     assignment.status = AssignmentStatus.verified
     assignment.verified_at = now
-    assignment.verified_by = user.id
+    assignment.verified_by = parent.id
     assignment.updated_at = now
 
     # Calculate event multiplier (use naive UTC to match SQLite storage)
@@ -993,7 +1307,6 @@ async def verify_chore(
     for event in active_events:
         multiplier *= event.multiplier
 
-    # Award base points
     db.add(PointTransaction(
         user_id=assignment.user_id,
         amount=base_points,
@@ -1016,14 +1329,12 @@ async def verify_chore(
             ))
             total_awarded += bonus_points
 
-    # Update kid's points and streak
     kid_result = await db.execute(select(User).where(User.id == assignment.user_id))
     kid = kid_result.scalar_one()
 
     kid.points_balance += total_awarded
     kid.total_points_earned += total_awarded
 
-    # Pet XP — award the same amount as quest XP (per-pet tracking)
     from backend.services.pet_leveling import award_pet_xp_db
     pet_levelup = await award_pet_xp_db(db, kid, total_awarded)
     if pet_levelup:
@@ -1035,75 +1346,54 @@ async def verify_chore(
             reference_type="pet",
         ))
 
-    if kid.last_streak_date == today:
-        pass
-    elif kid.last_streak_date is not None:
-        gap = (today - kid.last_streak_date).days
-        if gap == 1:
-            kid.current_streak += 1
-            kid.last_streak_date = today
-        elif gap > 1:
-            # Check if all gap days were vacation days (streak shouldn't break)
-            from backend.routers.vacation import is_vacation_day
-            all_vacation = True
-            for offset in range(1, gap):
-                gap_day = kid.last_streak_date + timedelta(days=offset)
-                if not await is_vacation_day(db, gap_day):
-                    all_vacation = False
-                    break
-            if all_vacation:
+    if assignment_completion_advances_streak(assignment):
+        if kid.last_streak_date == today:
+            pass
+        elif kid.last_streak_date is not None:
+            gap = (today - kid.last_streak_date).days
+            if gap == 1:
                 kid.current_streak += 1
                 kid.last_streak_date = today
-            else:
-                # Streak freeze: auto-use if available (1 per calendar month)
-                current_month = today.month + today.year * 12
-                freeze_month = kid.streak_freeze_month or 0
-                if kid.current_streak > 0 and freeze_month != current_month:
-                    # Use the freeze — preserve streak
-                    kid.streak_freezes_used = (kid.streak_freezes_used or 0) + 1
-                    kid.streak_freeze_month = current_month
+            elif gap > 1:
+                if await gap_preserves_streak(
+                    db, kid.id, kid.last_streak_date, today
+                ):
                     kid.current_streak += 1
                     kid.last_streak_date = today
                 else:
-                    kid.current_streak = 1
-                    kid.last_streak_date = today
+                    current_month = today.month + today.year * 12
+                    freeze_month = kid.streak_freeze_month or 0
+                    if kid.current_streak > 0 and freeze_month != current_month:
+                        kid.streak_freezes_used = (kid.streak_freezes_used or 0) + 1
+                        kid.streak_freeze_month = current_month
+                        kid.current_streak += 1
+                        kid.last_streak_date = today
+                    else:
+                        kid.current_streak = 1
+                        kid.last_streak_date = today
+            else:
+                kid.current_streak = 1
+                kid.last_streak_date = today
         else:
             kid.current_streak = 1
             kid.last_streak_date = today
-    else:
-        kid.current_streak = 1
-        kid.last_streak_date = today
 
-    if kid.current_streak > kid.longest_streak:
-        kid.longest_streak = kid.current_streak
+        if kid.current_streak > kid.longest_streak:
+            kid.longest_streak = kid.current_streak
 
-    # Streak milestone notifications
-    _STREAK_MILESTONES = (7, 30, 100)
-    if kid.current_streak in _STREAK_MILESTONES:
-        db.add(Notification(
-            user_id=kid.id,
-            type=NotificationType.streak_milestone,
-            title=f"{kid.current_streak}-Day Streak!",
-            message=f"You've completed quests {kid.current_streak} days in a row! Keep it up!",
-            reference_type="streak",
-        ))
+        _STREAK_MILESTONES = (7, 30, 100)
+        if kid.current_streak in _STREAK_MILESTONES:
+            db.add(Notification(
+                user_id=kid.id,
+                type=NotificationType.streak_milestone,
+                title=f"{kid.current_streak}-Day Streak!",
+                message=f"You've completed quests {kid.current_streak} days in a row! Keep it up!",
+                reference_type="streak",
+            ))
 
     await db.commit()
     await check_achievements(db, kid)
-
-    # Deactivate assignment rule for one-time quests so they no longer
-    # appear as assigned after completion.
-    if chore.recurrence == Recurrence.once:
-        rule_result = await db.execute(
-            select(ChoreAssignmentRule).where(
-                ChoreAssignmentRule.chore_id == chore_id,
-                ChoreAssignmentRule.user_id == assignment.user_id,
-                ChoreAssignmentRule.is_active == True,
-            )
-        )
-        one_time_rule = rule_result.scalar_one_or_none()
-        if one_time_rule:
-            one_time_rule.is_active = False
+    await _deactivate_one_time_rule_if_needed(db, assignment)
 
     db.add(Notification(
         user_id=assignment.user_id,
@@ -1115,7 +1405,6 @@ async def verify_chore(
     ))
     await db.commit()
 
-    # Roll for quest drop avatar item
     from backend.routers.avatar import try_quest_drop
     drop = await try_quest_drop(db, kid, chore.difficulty.value)
     if drop:
@@ -1134,39 +1423,26 @@ async def verify_chore(
         assignment.user_id,
         {"type": "chore_verified", "data": ws_data},
     )
+    await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=parent.id)
 
     assignment = await _reload_assignment_with_relations(db, assignment.id)
     return AssignmentResponse.model_validate(assignment)
 
 
-@router.post("/{chore_id}/uncomplete", response_model=AssignmentResponse)
-async def uncomplete_chore(
-    chore_id: int,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_parent),
-):
-    today = date.today()
-    now = datetime.now(timezone.utc)
-
-    result = await db.execute(
-        select(ChoreAssignment).where(
-            ChoreAssignment.chore_id == chore_id,
-            ChoreAssignment.date == today,
-            ChoreAssignment.status.in_(
-                [AssignmentStatus.completed, AssignmentStatus.verified]
-            ),
-        )
-    )
-    assignment = result.scalar_one_or_none()
-    if assignment is None:
+async def _mark_assignment_needs_work(
+    db: AsyncSession,
+    assignment: ChoreAssignment,
+    parent: User,
+) -> AssignmentResponse:
+    if assignment.status not in (AssignmentStatus.completed, AssignmentStatus.verified):
         raise HTTPException(
-            status_code=404,
-            detail="No completed assignment found to undo for this chore today",
+            status_code=400,
+            detail="Only completed or approved assignments can be sent back",
         )
 
+    now = datetime.now(timezone.utc)
     assigned_user_id = assignment.user_id
 
-    # Reverse point transactions
     tx_result = await db.execute(
         select(PointTransaction).where(
             PointTransaction.user_id == assigned_user_id,
@@ -1183,13 +1459,8 @@ async def uncomplete_chore(
         select(User).where(User.id == assigned_user_id)
     )
     assigned_user = assigned_user_result.scalar_one()
-
     assigned_user.points_balance = max(0, assigned_user.points_balance - total_deducted)
-    # Note: do NOT decrement total_points_earned — it tracks lifetime XP
-    # earned and is used for milestone unlocks (avatar items, achievements).
-    # Deducting it would cause kids to lose unlocks when quests are undone.
 
-    # Reverse pet XP for the currently equipped pet
     if total_deducted > 0:
         config = assigned_user.avatar_config or {}
         if config.get("pet") and config["pet"] != "none":
@@ -1217,10 +1488,135 @@ async def uncomplete_chore(
     assignment.updated_at = now
 
     await db.commit()
-
     assignment = await _reload_assignment_with_relations(db, assignment.id)
-    await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=user.id)
+    await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=parent.id)
     return AssignmentResponse.model_validate(assignment)
+
+
+async def _skip_assignment(
+    db: AsyncSession,
+    assignment: ChoreAssignment,
+    parent: User,
+) -> AssignmentResponse:
+    if assignment.status != AssignmentStatus.pending:
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending assignments can be skipped",
+        )
+
+    now = datetime.now(timezone.utc)
+    assignment.status = AssignmentStatus.skipped
+    assignment.updated_at = now
+    await db.commit()
+
+    await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=parent.id)
+    assignment = await _reload_assignment_with_relations(db, assignment.id)
+    return AssignmentResponse.model_validate(assignment)
+
+
+async def _load_today_assignment_for_chore_action(
+    db: AsyncSession,
+    chore_id: int,
+    statuses: list[AssignmentStatus],
+    not_found_detail: str,
+) -> ChoreAssignment:
+    result = await db.execute(
+        select(ChoreAssignment)
+        .where(
+            ChoreAssignment.chore_id == chore_id,
+            ChoreAssignment.date == date.today(),
+            ChoreAssignment.status.in_(statuses),
+        )
+        .options(
+            selectinload(ChoreAssignment.chore).selectinload(Chore.category),
+            selectinload(ChoreAssignment.user),
+        )
+        .order_by(ChoreAssignment.id)
+    )
+    assignment = result.scalars().first()
+    if assignment is None:
+        raise HTTPException(status_code=404, detail=not_found_detail)
+    return assignment
+
+
+@router.post("/assignments/{assignment_id}/approve", response_model=AssignmentResponse)
+async def approve_assignment(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    assignment = await _load_assignment_for_action(db, assignment_id)
+    return await _approve_assignment(db, assignment, user)
+
+
+@router.post("/assignments/{assignment_id}/needs-work", response_model=AssignmentResponse)
+async def mark_assignment_needs_work(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    assignment = await _load_assignment_for_action(db, assignment_id)
+    return await _mark_assignment_needs_work(db, assignment, user)
+
+
+@router.post("/assignments/{assignment_id}/skip", response_model=AssignmentResponse)
+async def skip_assignment_by_id(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    assignment = await _load_assignment_for_action(db, assignment_id)
+    return await _skip_assignment(db, assignment, user)
+
+
+@router.post("/assignments/{assignment_id}/verify", response_model=AssignmentResponse)
+async def verify_assignment_alias(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    assignment = await _load_assignment_for_action(db, assignment_id)
+    return await _approve_assignment(db, assignment, user)
+
+
+@router.post("/assignments/{assignment_id}/uncomplete", response_model=AssignmentResponse)
+async def uncomplete_assignment_alias(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    assignment = await _load_assignment_for_action(db, assignment_id)
+    return await _mark_assignment_needs_work(db, assignment, user)
+
+
+@router.post("/{chore_id}/verify", response_model=AssignmentResponse)
+async def verify_chore(
+    chore_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    assignment = await _load_today_assignment_for_chore_action(
+        db,
+        chore_id,
+        [AssignmentStatus.completed],
+        "No completed assignment found to approve for this chore today",
+    )
+    return await _approve_assignment(db, assignment, user)
+
+
+@router.post("/{chore_id}/uncomplete", response_model=AssignmentResponse)
+async def uncomplete_chore(
+    chore_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    assignment = await _load_today_assignment_for_chore_action(
+        db,
+        chore_id,
+        [AssignmentStatus.completed, AssignmentStatus.verified],
+        "No completed assignment found to send back for this chore today",
+    )
+    return await _mark_assignment_needs_work(db, assignment, user)
 
 
 @router.post("/{chore_id}/skip", response_model=AssignmentResponse)
@@ -1229,31 +1625,13 @@ async def skip_chore(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_parent),
 ):
-    today = date.today()
-    now = datetime.now(timezone.utc)
-
-    result = await db.execute(
-        select(ChoreAssignment).where(
-            ChoreAssignment.chore_id == chore_id,
-            ChoreAssignment.date == today,
-            ChoreAssignment.status == AssignmentStatus.pending,
-        )
+    assignment = await _load_today_assignment_for_chore_action(
+        db,
+        chore_id,
+        [AssignmentStatus.pending],
+        "No pending assignment found to skip for this chore today",
     )
-    assignment = result.scalar_one_or_none()
-    if assignment is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No pending assignment found to skip for this chore today",
-        )
-
-    assignment.status = AssignmentStatus.skipped
-    assignment.updated_at = now
-    await db.commit()
-
-    await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=user.id)
-
-    assignment = await _reload_assignment_with_relations(db, assignment.id)
-    return AssignmentResponse.model_validate(assignment)
+    return await _skip_assignment(db, assignment, user)
 
 
 @router.post("/assignments/{assignment_id}/feedback", response_model=AssignmentResponse)

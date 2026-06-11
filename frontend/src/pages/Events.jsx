@@ -143,14 +143,14 @@ export default function Events() {
       <div className="flex items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-cream text-lg font-semibold">
-            Seasonal Events
+            Bonus XP Events
           </h1>
         </div>
 
         {isParent && (
           <button onClick={openCreate} className="game-btn game-btn-gold flex items-center gap-2">
             <Plus size={14} />
-            New Event
+            New XP Event
           </button>
         )}
       </div>
@@ -240,7 +240,7 @@ export default function Events() {
       <Modal
         isOpen={formModal}
         onClose={() => setFormModal(false)}
-        title={editing ? 'Edit Event' : 'New Seasonal Event'}
+        title={editing ? 'Edit XP Event' : 'New Bonus XP Event'}
         actions={[
           { label: 'Cancel', onClick: () => setFormModal(false), className: 'game-btn game-btn-red' },
           { label: submitting ? 'Saving...' : 'Save', onClick: submitForm, className: 'game-btn game-btn-gold', disabled: submitting },
@@ -259,7 +259,7 @@ export default function Events() {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Summer Challenge"
+              placeholder="e.g. Double XP Weekend"
               className="field-input"
             />
           </div>
@@ -286,7 +286,7 @@ export default function Events() {
               placeholder="e.g. 2.0"
               className="field-input"
             />
-            <p className="text-muted text-xs mt-1">All XP earned during this event is multiplied by this amount.</p>
+            <p className="text-muted text-xs mt-1">Approved quest XP earns this multiplier while the event is active.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

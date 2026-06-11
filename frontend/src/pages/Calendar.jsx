@@ -5,6 +5,17 @@ import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle } from '../utils/questThemeText';
+import {
+  addDays,
+  backendMondayWeekStartsForSundayWeek,
+  sundayWeekStart,
+  toISO,
+} from '../utils/calendarWeek';
+import {
+  groupAssignmentsByChore,
+  groupAssignmentsByKid,
+  parentCalendarStatus,
+} from '../utils/parentCalendarGroups';
 import Modal from '../components/Modal';
 import {
   ChevronLeft,
@@ -12,27 +23,18 @@ import {
   CheckCheck,
   Clock,
   Slash,
+  Swords,
+  Users,
   ArrowRightLeft,
-  CalendarDays,
   Loader2,
   X,
-  Trash2,
+  Sparkles,
 } from 'lucide-react';
-
-function toISO(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDays(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function statusStyle(assignment, dayStr) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toISO(new Date());
 
   if (assignment.status === 'verified') {
     return {
@@ -57,7 +59,7 @@ function statusStyle(assignment, dayStr) {
     };
   }
   // pending
-  if (dayStr < today) {
+  if (dayStr < today && !assignment.is_optional) {
     // overdue
     return {
       border: 'border-crimson',
@@ -72,6 +74,136 @@ function statusStyle(assignment, dayStr) {
   };
 }
 
+const STATUS_TONE_CLASSES = {
+  pending: 'text-gold border-gold/30 bg-gold/10',
+  overdue: 'text-crimson border-crimson/30 bg-crimson/10',
+  completed: 'text-emerald border-emerald/30 bg-emerald/10',
+  approved: 'text-accent border-accent/30 bg-accent/10',
+  muted: 'text-muted border-border bg-surface-raised/40',
+  optional: 'text-gold border-gold/30 bg-gold/10',
+};
+
+function parentGroupClass(group, dayStr, today) {
+  const hasOverdue = group.items.some(
+    (item) =>
+      (item.status === 'pending' || item.status === 'assigned') &&
+      item.assignment.date < today &&
+      !item.assignment.is_optional
+  );
+  if (hasOverdue) return 'border-crimson/60 bg-crimson/5';
+  if (group.totalCount > 0 && group.doneCount === group.totalCount) {
+    return 'border-emerald/50 bg-emerald/5';
+  }
+  if (dayStr === today) return 'border-accent/30 bg-accent/5';
+  return '';
+}
+
+function ParentStatusBadge({ assignment, today }) {
+  const status = parentCalendarStatus(assignment, today);
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] leading-tight border ${
+        STATUS_TONE_CLASSES[status.tone] || STATUS_TONE_CLASSES.pending
+      }`}
+    >
+      {status.label}
+    </span>
+  );
+}
+
+function ParentCalendarGroup({
+  group,
+  dayStr,
+  today,
+  colorTheme,
+  onNavigate,
+  onRemove,
+  removingId,
+}) {
+  const isQuestGroup = group.kind === 'chore';
+  const HeaderIcon = isQuestGroup ? Swords : Users;
+
+  return (
+    <div
+      className={`game-panel !border p-2 space-y-2 hover:border-accent/40 transition-colors ${parentGroupClass(group, dayStr, today)}`}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          if (isQuestGroup && group.chore_id) onNavigate(group.chore_id);
+        }}
+        className={`w-full flex items-start gap-1.5 text-left ${
+          isQuestGroup ? 'cursor-pointer' : 'cursor-default'
+        }`}
+      >
+        <HeaderIcon size={14} className="text-accent mt-0.5 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p
+            className="text-sm leading-tight text-cream font-medium break-words"
+            title={isQuestGroup ? themedTitle(group.title, colorTheme) : group.title}
+          >
+            {isQuestGroup ? themedTitle(group.title, colorTheme) : group.title}
+          </p>
+          <p className="text-xs text-muted mt-0.5">
+            {group.doneCount}/{group.totalCount} checked off
+          </p>
+        </div>
+      </button>
+
+      <div className="space-y-1">
+        {group.items.map((item) => {
+          const assignment = item.assignment;
+          const canRemove = assignment.status === 'pending';
+          const label = group.kind === 'kid'
+            ? themedTitle(item.label, colorTheme)
+            : item.label;
+          return (
+            <div
+              key={assignment.id}
+              className="flex items-start gap-1.5 rounded-md border border-border/60 bg-surface-raised/20 px-2 py-1.5"
+            >
+              <button
+                type="button"
+                onClick={() => onNavigate(assignment.chore_id || assignment.chore?.id)}
+                className="min-w-0 flex-1 text-left text-xs text-muted hover:text-cream transition-colors leading-snug break-words"
+                title={label}
+              >
+                <span>{label}</span>
+                {assignment.is_optional && (
+                  <span className="ml-1 inline-flex items-center gap-0.5 text-gold">
+                    <Sparkles size={10} />
+                    Bonus
+                  </span>
+                )}
+              </button>
+              <ParentStatusBadge assignment={assignment} today={today} />
+              {canRemove && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(assignment);
+                  }}
+                  disabled={removingId === assignment.id}
+                  className="p-0.5 rounded text-muted hover:text-crimson transition-colors disabled:opacity-50"
+                  title="Remove this assignment"
+                  aria-label="Remove this assignment"
+                >
+                  {removingId === assignment.id ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <X size={12} />
+                  )}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Calendar() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -79,8 +211,9 @@ export default function Calendar() {
   const { colorTheme } = useTheme();
   const isKid = user?.role === 'kid';
 
-  const [startDate, setStartDate] = useState(() => toISO(new Date()));
+  const [startDate, setStartDate] = useState(() => sundayWeekStart(toISO(new Date())));
   const [assignments, setAssignments] = useState({});
+  const [parentCalendarView, setParentCalendarView] = useState('quest');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -93,41 +226,27 @@ export default function Calendar() {
   const [tradeError, setTradeError] = useState('');
   const [removingId, setRemovingId] = useState(null);
   const [removeTarget, setRemoveTarget] = useState(null);
-  const [cleaning, setCleaning] = useState(false);
-  const [cleanMsg, setCleanMsg] = useState('');
 
   const fetchCalendar = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      // The backend requires week_start to be a Monday. Our 7-day window
-      // may span two Mon-Sun weeks, so fetch both if needed.
-      const d = new Date(startDate + 'T00:00:00');
-      const dayOfWeek = d.getDay(); // 0=Sun..6=Sat
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const monday1 = addDays(startDate, mondayOffset);
-
-      const data = await api(`/api/calendar?week_start=${monday1}`);
       const byDay = {};
       for (let i = 0; i < 7; i++) {
         const dayKey = addDays(startDate, i);
-        byDay[dayKey] = data.days?.[dayKey] || [];
+        byDay[dayKey] = [];
       }
 
-      // If our window extends past Sunday of that week, fetch next week too
-      const monday2 = addDays(monday1, 7);
-      const lastDay = addDays(startDate, 6);
-      const sunday1 = addDays(monday1, 6);
-      if (lastDay > sunday1) {
-        try {
-          const data2 = await api(`/api/calendar?week_start=${monday2}`);
-          for (let i = 0; i < 7; i++) {
-            const dayKey = addDays(startDate, i);
-            if (!byDay[dayKey]?.length && data2.days?.[dayKey]) {
-              byDay[dayKey] = data2.days[dayKey];
-            }
+      const backendWeeks = backendMondayWeekStartsForSundayWeek(startDate);
+      const results = await Promise.all(
+        backendWeeks.map((weekStart) => api(`/api/calendar?week_start=${weekStart}`))
+      );
+      for (const data of results) {
+        for (const dayKey of Object.keys(byDay)) {
+          if (data.days?.[dayKey]) {
+            byDay[dayKey] = data.days[dayKey];
           }
-        } catch { /* second fetch is best-effort */ }
+        }
       }
       setAssignments(byDay);
     } catch (err) {
@@ -150,7 +269,7 @@ export default function Calendar() {
 
   const prevWeek = () => setStartDate(addDays(startDate, -7));
   const nextWeek = () => setStartDate(addDays(startDate, 7));
-  const goToday = () => setStartDate(toISO(new Date()));
+  const goToday = () => setStartDate(sundayWeekStart(toISO(new Date())));
 
   const openTrade = async (assignment) => {
     setTradeAssignment(assignment);
@@ -204,23 +323,19 @@ export default function Calendar() {
     }
   };
 
-  const cleanupStale = async () => {
-    setCleaning(true);
-    setCleanMsg('');
-    try {
-      const data = await api('/api/chores/cleanup-all-stale', { method: 'POST' });
-      setCleanMsg(data.message || 'Cleanup complete');
-      fetchCalendar();
-    } catch (err) {
-      setError(err.message || 'Cleanup failed');
-    } finally {
-      setCleaning(false);
+  const requestRemoveAssignment = (assignment) => {
+    const isRecurring = assignment.chore?.recurrence && assignment.chore.recurrence !== 'once';
+    if (isRecurring) {
+      setRemoveTarget(assignment);
+    } else {
+      removeAssignment(assignment.id);
     }
   };
 
   const endDate = addDays(startDate, 6);
   const today = toISO(new Date());
-  const isAtToday = startDate === today;
+  const currentWeekStart = sundayWeekStart(today);
+  const isAtCurrentWeek = startDate === currentWeekStart;
   const formatShortDate = (str) => {
     const d = new Date(str + 'T00:00:00');
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -236,6 +351,35 @@ export default function Calendar() {
 
         {/* Week navigation */}
         <div className="flex flex-wrap items-center gap-2">
+          {!isKid && (
+            <div className="inline-flex items-center rounded-md border border-border bg-surface-raised/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setParentCalendarView('quest')}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${
+                  parentCalendarView === 'quest'
+                    ? 'bg-accent text-navy'
+                    : 'text-muted hover:text-cream'
+                }`}
+              >
+                <Swords size={13} />
+                By Quest
+              </button>
+              <button
+                type="button"
+                onClick={() => setParentCalendarView('kid')}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors ${
+                  parentCalendarView === 'kid'
+                    ? 'bg-accent text-navy'
+                    : 'text-muted hover:text-cream'
+                }`}
+              >
+                <Users size={13} />
+                By Kid
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center gap-1">
             <button
               onClick={prevWeek}
@@ -252,42 +396,20 @@ export default function Calendar() {
             <button
               onClick={nextWeek}
               className="p-2 rounded hover:bg-surface-raised transition-colors text-muted hover:text-cream"
-              aria-label="Next 7 days"
+              aria-label="Next week"
             >
               <ChevronRight size={20} />
             </button>
           </div>
 
-          {!isAtToday && (
+          {!isAtCurrentWeek && (
             <button onClick={goToday} className="game-btn game-btn-blue">
               Today
             </button>
           )}
 
-          {!isKid && (
-            <button
-              onClick={cleanupStale}
-              disabled={cleaning}
-              className="game-btn game-btn-red flex items-center gap-1"
-              title="Remove all overdue pending quests and reset exclusions"
-            >
-              {cleaning ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Trash2 size={14} />
-              )}
-              Clean Up
-            </button>
-          )}
         </div>
       </div>
-
-      {/* Cleanup success message */}
-      {cleanMsg && (
-        <div className="mb-4 p-3 rounded-md border border-emerald/30 bg-emerald/10 text-emerald text-sm text-center">
-          {cleanMsg}
-        </div>
-      )}
 
       {/* Error */}
       {error && (
@@ -303,7 +425,7 @@ export default function Calendar() {
         </div>
       )}
 
-      {/* Calendar Grid — 7 days starting from startDate */}
+      {/* Calendar Grid — Sunday through Saturday */}
       {!loading && (
         <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
           {Array.from({ length: 7 }, (_, i) => {
@@ -315,6 +437,11 @@ export default function Calendar() {
             const dayAssignments = isKid
               ? allDayAssignments.filter((a) => a.user_id === user?.id)
               : allDayAssignments;
+            const parentGroups = isKid
+              ? []
+              : parentCalendarView === 'quest'
+              ? groupAssignmentsByChore(dayAssignments)
+              : groupAssignmentsByKid(dayAssignments);
 
             return (
               <div key={dayStr} className="min-w-0">
@@ -341,75 +468,65 @@ export default function Calendar() {
                       No quests
                     </p>
                   )}
-                  {dayAssignments.map((a) => {
-                    const style = statusStyle(a, dayStr);
-                    return (
-                      <div
-                        key={a.id}
-                        className={`game-panel !border ${style.border} ${style.bg} p-2 cursor-pointer hover:border-accent/40 transition-colors`}
-                        onClick={() =>
-                          navigate(`/chores/${a.chore_id || a.id}`)
-                        }
-                      >
-                        <div className="flex items-start gap-1.5">
-                          {style.icon}
-                          <div className="min-w-0 flex-1">
-                            <p
-                              className={`text-sm leading-tight truncate ${
-                                style.textClass || 'text-cream'
-                              }`}
-                            >
-                              {themedTitle(a.chore?.title || a.chore_title || 'Quest', colorTheme)}
-                            </p>
-                            {/* Show assigned kid for parents */}
-                            {!isKid && (a.user?.display_name || a.assigned_to_name) && (
-                              <p className="text-xs text-purple font-medium mt-0.5 truncate">
-                                {a.user?.display_name || a.assigned_to_name}
-                              </p>
+                  {isKid
+                    ? dayAssignments.map((a) => {
+                        const style = statusStyle(a, dayStr);
+                        return (
+                          <div
+                            key={a.id}
+                            className={`game-panel !border ${style.border} ${style.bg} p-2 cursor-pointer hover:border-accent/40 transition-colors`}
+                            onClick={() =>
+                              navigate(`/chores/${a.chore_id || a.id}`)
+                            }
+                          >
+                            <div className="flex items-start gap-1.5">
+                              {style.icon}
+                              <div className="min-w-0 flex-1">
+                                <p
+                                  className={`text-sm leading-tight break-words ${
+                                    style.textClass || 'text-cream'
+                                  }`}
+                                  title={themedTitle(a.chore?.title || a.chore_title || 'Quest', colorTheme)}
+                                >
+                                  {themedTitle(a.chore?.title || a.chore_title || 'Quest', colorTheme)}
+                                </p>
+                                {a.is_optional && (
+                                  <span className="mt-1 inline-flex items-center gap-1 text-gold text-[10px] font-medium">
+                                    <Sparkles size={10} />
+                                    Bonus
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Trade button for kids */}
+                            {chore_trading_enabled && a.status === 'pending' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTrade(a);
+                                }}
+                                className="mt-1.5 flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors"
+                              >
+                                <ArrowRightLeft size={12} />
+                                Trade
+                              </button>
                             )}
                           </div>
-                        </div>
-
-                        {/* Trade button for kids */}
-                        {isKid && chore_trading_enabled && a.status === 'pending' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openTrade(a);
-                            }}
-                            className="mt-1.5 flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80 transition-colors"
-                          >
-                            <ArrowRightLeft size={12} />
-                            Trade
-                          </button>
-                        )}
-
-                        {/* Remove button for parents on pending assignments */}
-                        {!isKid && a.status === 'pending' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const isRecurring = a.chore?.recurrence && a.chore.recurrence !== 'once';
-                              if (isRecurring) {
-                                setRemoveTarget(a);
-                              } else {
-                                removeAssignment(a.id);
-                              }
-                            }}
-                            disabled={removingId === a.id}
-                            className="mt-1.5 flex items-center gap-1 text-xs font-medium text-crimson hover:text-crimson/80 transition-colors"
-                          >
-                            {removingId === a.id ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              <X size={12} />
-                            )}
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })
+                    : parentGroups.map((group) => (
+                        <ParentCalendarGroup
+                          key={`${group.kind}-${group.id}`}
+                          group={group}
+                          dayStr={dayStr}
+                          today={today}
+                          colorTheme={colorTheme}
+                          removingId={removingId}
+                          onNavigate={(choreId) => navigate(`/chores/${choreId}`)}
+                          onRemove={requestRemoveAssignment}
+                        />
+                      ))}
                 </div>
               </div>
             );

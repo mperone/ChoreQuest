@@ -1,3 +1,5 @@
+import { checkCompatibilityResponse } from '../utils/appCompat'
+
 const TOKEN_KEY = 'chorequest_access_token';
 
 let accessToken = null;
@@ -77,6 +79,8 @@ export async function api(path, options = {}) {
       throw new Error('Session expired');
     }
   }
+
+  checkCompatibilityResponse(res);
 
   if (raw) return res;
 

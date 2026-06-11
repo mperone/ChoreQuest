@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import json
 import logging
 from pathlib import Path
 import sqlite3
@@ -187,10 +188,164 @@ def _migrate_existing_lightweight_columns(conn: sqlite3.Connection) -> None:
         _add_column_if_missing(conn, table, column, definition)
 
 
+def _date_prefix(value: str | None) -> str | None:
+    if not value:
+        return None
+    return str(value)[:10]
+
+
+def _weekday_from_date_string(value: str | None) -> int | None:
+    date_value = _date_prefix(value)
+    if date_value is None:
+        return None
+    return date.fromisoformat(date_value).weekday()
+
+
+def _json_list(value) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        raw = value
+    else:
+        try:
+            raw = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            raw = []
+    return sorted({
+        int(day)
+        for day in raw
+        if isinstance(day, int) or (isinstance(day, str) and day.isdigit())
+    } & set(range(7)))
+
+
+def _migrate_schedule_rules_v2(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "chore_assignment_rules"):
+        return
+
+    _add_column_if_missing(
+        conn, "chore_assignment_rules", "schedule_type", "VARCHAR(20)",
+    )
+    _add_column_if_missing(
+        conn, "chore_assignment_rules", "start_date", "DATE",
+    )
+    _add_column_if_missing(
+        conn, "chore_assignment_rules", "weekdays", "JSON",
+    )
+
+    rows = conn.execute(
+        """
+        SELECT
+            r.id,
+            r.recurrence,
+            r.custom_days,
+            r.created_at,
+            c.created_at,
+            (
+                SELECT MIN(a.date)
+                FROM chore_assignments a
+                WHERE a.chore_id = r.chore_id
+                  AND a.user_id = r.user_id
+            ) AS first_assignment_date
+        FROM chore_assignment_rules r
+        LEFT JOIN chores c ON c.id = r.chore_id
+        WHERE r.schedule_type IS NULL
+           OR r.start_date IS NULL
+        """
+    ).fetchall()
+
+    for (
+        rule_id,
+        recurrence,
+        custom_days,
+        rule_created_at,
+        chore_created_at,
+        first_assignment_date,
+    ) in rows:
+        if recurrence == "custom":
+            schedule_type = "weekly"
+            start_date = _date_prefix(rule_created_at) or _date_prefix(chore_created_at)
+            weekdays = _json_list(custom_days)
+        elif recurrence in {"weekly", "fortnightly"}:
+            schedule_type = recurrence
+            start_date = _date_prefix(chore_created_at) or _date_prefix(rule_created_at)
+            weekday = _weekday_from_date_string(chore_created_at) or _weekday_from_date_string(rule_created_at)
+            weekdays = [weekday] if weekday is not None else []
+        elif recurrence == "daily":
+            schedule_type = "daily"
+            start_date = _date_prefix(rule_created_at) or _date_prefix(chore_created_at)
+            weekdays = []
+        else:
+            schedule_type = "once"
+            start_date = (
+                _date_prefix(first_assignment_date)
+                or _date_prefix(rule_created_at)
+                or _date_prefix(chore_created_at)
+            )
+            weekdays = []
+
+        conn.execute(
+            """
+            UPDATE chore_assignment_rules
+            SET schedule_type = ?,
+                start_date = ?,
+                weekdays = ?
+            WHERE id = ?
+            """,
+            (
+                schedule_type,
+                start_date,
+                json.dumps(weekdays) if weekdays else None,
+                rule_id,
+            ),
+        )
+
+
+def _migrate_schedule_monthly_v1(conn: sqlite3.Connection) -> None:
+    if not _table_exists(conn, "chore_assignment_rules"):
+        return
+
+    _add_column_if_missing(
+        conn, "chore_assignment_rules", "month_day", "INTEGER",
+    )
+    conn.execute(
+        """
+        UPDATE chore_assignment_rules
+        SET month_day = CAST(strftime('%d', start_date) AS INTEGER)
+        WHERE schedule_type = 'monthly'
+          AND month_day IS NULL
+          AND start_date IS NOT NULL
+        """
+    )
+
+
+def _migrate_optional_quests_v1(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(
+        conn, "chore_assignment_rules", "is_optional", "BOOLEAN DEFAULT 0",
+    )
+    _add_column_if_missing(
+        conn, "chore_assignments", "is_optional", "BOOLEAN DEFAULT 0",
+    )
+
+
 MIGRATIONS = [
     Migration(
         id="2026_06_10_existing_lightweight_columns",
         description="Record existing SQLite column backfills in schema_migrations",
         migrate=_migrate_existing_lightweight_columns,
+    ),
+    Migration(
+        id="2026_06_10_schedule_rules_v2",
+        description="Add explicit schedule fields to assignment rules",
+        migrate=_migrate_schedule_rules_v2,
+    ),
+    Migration(
+        id="2026_06_10_schedule_monthly_v1",
+        description="Add monthly schedule day to assignment rules",
+        migrate=_migrate_schedule_monthly_v1,
+    ),
+    Migration(
+        id="2026_06_10_optional_quests_v1",
+        description="Add optional quest flags to assignment rules and rows",
+        migrate=_migrate_optional_quests_v1,
     ),
 ]
