@@ -232,21 +232,23 @@ class ChoreDaypartReorderEndpointTests(unittest.IsolatedAsyncioTestCase):
             ]
             db.add_all(chores)
             await db.commit()
+            parent_id = parent.id
+            chore_ids = [chore.id for chore in chores]
 
             request = ChoreDaypartReorderRequest(
                 items=[
                     {
-                        "chore_id": chores[0].id,
+                        "chore_id": chore_ids[0],
                         "daypart": "morning",
                         "sort_order": 1,
                     },
                     {
-                        "chore_id": chores[1].id,
+                        "chore_id": chore_ids[1],
                         "daypart": "morning",
                         "sort_order": 1,
                     },
                     {
-                        "chore_id": chores[2].id,
+                        "chore_id": chore_ids[2],
                         "daypart": "afternoon",
                         "sort_order": 0,
                     },
@@ -259,17 +261,18 @@ class ChoreDaypartReorderEndpointTests(unittest.IsolatedAsyncioTestCase):
             ) as broadcast:
                 response = await reorder_chore_dayparts(request, db=db, user=parent)
 
-            persisted = await db.execute(
-                select(Chore).where(Chore.id.in_([chore.id for chore in chores]))
+        async with self.Session() as fresh_db:
+            persisted = await fresh_db.execute(
+                select(Chore).where(Chore.id.in_(chore_ids))
             )
             persisted_by_id = {chore.id: chore for chore in persisted.scalars().all()}
 
         self.assertEqual([chore.title for chore in response], ["alpha", "Zeta", "Books"])
-        self.assertEqual(persisted_by_id[chores[0].id].daypart, ChoreDaypart.morning)
-        self.assertEqual(persisted_by_id[chores[0].id].sort_order, 1)
-        self.assertEqual(persisted_by_id[chores[2].id].daypart, ChoreDaypart.afternoon)
-        self.assertEqual(persisted_by_id[chores[2].id].sort_order, 0)
-        broadcast.assert_awaited_once_with(_CHORE_CHANGED, exclude_user=parent.id)
+        self.assertEqual(persisted_by_id[chore_ids[0]].daypart, ChoreDaypart.morning)
+        self.assertEqual(persisted_by_id[chore_ids[0]].sort_order, 1)
+        self.assertEqual(persisted_by_id[chore_ids[2]].daypart, ChoreDaypart.afternoon)
+        self.assertEqual(persisted_by_id[chore_ids[2]].sort_order, 0)
+        broadcast.assert_awaited_once_with(_CHORE_CHANGED, exclude_user=parent_id)
 
 
 if __name__ == "__main__":
