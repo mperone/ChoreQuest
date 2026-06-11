@@ -1,0 +1,131 @@
+export const DAYPART_ORDER = ['morning', 'afternoon', 'evening', 'anytime']
+
+export const DAYPART_LABELS = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  evening: 'Evening',
+  anytime: 'Anytime',
+}
+
+export const DAILY_SECTION_META = {
+  now: { id: 'now', title: 'Now' },
+  anytime: { id: 'anytime', title: 'Anytime' },
+  later: { id: 'later', title: 'Later' },
+  bonus: { id: 'bonus', title: 'Bonus' },
+}
+
+const REQUIRED_DONE_STATUSES = new Set(['completed', 'verified', 'skipped'])
+
+export function currentDaypartForHour(hour) {
+  if (hour < 12) return 'morning'
+  if (hour < 17) return 'afternoon'
+  return 'evening'
+}
+
+function normaliseDaypart(value) {
+  return DAYPART_ORDER.includes(value) ? value : 'anytime'
+}
+
+function choreFromAssignment(item) {
+  return item?.chore || item || {}
+}
+
+function assignmentStatus(item) {
+  return item.assignment_status || item.status || 'pending'
+}
+
+function isDone(item) {
+  return REQUIRED_DONE_STATUSES.has(assignmentStatus(item))
+}
+
+function isOptional(item) {
+  const chore = choreFromAssignment(item)
+  return Boolean(item.is_optional ?? chore.is_optional)
+}
+
+function daypartRank(daypart) {
+  const index = DAYPART_ORDER.indexOf(normaliseDaypart(daypart))
+  return index === -1 ? DAYPART_ORDER.length : index
+}
+
+function sortDailyItems(items) {
+  return [...items].sort((a, b) => {
+    const choreA = choreFromAssignment(a)
+    const choreB = choreFromAssignment(b)
+    return (
+      daypartRank(choreA.daypart) - daypartRank(choreB.daypart)
+      || Number(choreA.sort_order || 0) - Number(choreB.sort_order || 0)
+      || String(choreA.title || a.title || '').localeCompare(String(choreB.title || b.title || ''))
+    )
+  })
+}
+
+export function groupDailyAssignments(items, { currentDaypart } = {}) {
+  const activeDaypart = normaliseDaypart(currentDaypart)
+  const sections = {
+    now: { ...DAILY_SECTION_META.now, items: [] },
+    anytime: { ...DAILY_SECTION_META.anytime, items: [] },
+    later: { ...DAILY_SECTION_META.later, items: [] },
+    bonus: { ...DAILY_SECTION_META.bonus, items: [] },
+  }
+
+  let requiredDone = 0
+  let requiredTotal = 0
+
+  for (const item of items || []) {
+    const chore = choreFromAssignment(item)
+    const daypart = normaliseDaypart(chore.daypart)
+    const optional = isOptional(item)
+    const done = isDone(item)
+    const futureRequired = daypart !== 'anytime' && daypartRank(daypart) > daypartRank(activeDaypart)
+
+    if (optional) {
+      if (!done) sections.bonus.items.push(item)
+      continue
+    }
+
+    if (done) {
+      requiredTotal += 1
+      requiredDone += 1
+      continue
+    }
+
+    if (daypart === activeDaypart) {
+      requiredTotal += 1
+      sections.now.items.push(item)
+    } else if (daypart === 'anytime') {
+      requiredTotal += 1
+      sections.anytime.items.push(item)
+    } else if (futureRequired) {
+      sections.later.items.push(item)
+    } else {
+      requiredTotal += 1
+      sections.anytime.items.push(item)
+    }
+  }
+
+  for (const section of Object.values(sections)) {
+    section.items = sortDailyItems(section.items)
+  }
+
+  return {
+    ...sections,
+    sections,
+    requiredDone,
+    requiredTotal,
+    requiredLeft: Math.max(0, requiredTotal - requiredDone),
+    nextUp: sections.now.items[0] || sections.anytime.items[0] || sections.later.items[0] || null,
+  }
+}
+
+export function buildChoreReorderPayload(groupedIds) {
+  return {
+    items: DAYPART_ORDER.flatMap((daypart) => (
+      (groupedIds[daypart] || []).map((choreId, index) => ({
+        chore_id: Number(choreId),
+        daypart,
+        sort_order: index,
+      }))
+    )),
+  }
+}
