@@ -15,6 +15,16 @@ Make the kid home screen the primary place where kids do today's quests. The exp
 - Parent ordering uses drag from the first version.
 - Pets are removed from active product behavior and UI.
 
+## Navigation And Labels
+
+Use distinct labels for distinct surfaces:
+
+- Kid Home uses section labels: `Now`, `Anytime`, `Later`, `Bonus`, and `Done Today`.
+- Quests uses tabs: `Today`, `Upcoming`, and `Recent`.
+- Parent Quest Management uses daypart groups: `Morning`, `Afternoon`, `Evening`, and `Anytime`.
+
+`Now`, `Anytime`, `Later`, and `Bonus` are not navigation tabs. They are visible sections in the kid's daily action flow. `Today`, `Upcoming`, and `Recent` belong only to the Quests browse/history screen.
+
 ## Dayparts And Ordering
 
 Add quest-level fields:

@@ -84,6 +84,15 @@
       box-shadow: 0 20px 60px rgba(0,0,0,.28);
     }
 
+    .mock-caption {
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      margin: 0 0 10px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
     .screen {
       min-height: 720px;
       border-radius: 12px;
@@ -310,6 +319,46 @@
       margin-right: 5px;
     }
 
+    .kid-card {
+      background: rgba(32,45,68,.95);
+      border: 1px solid rgba(148,163,184,.3);
+      border-radius: 7px;
+      padding: 9px;
+      margin-bottom: 8px;
+    }
+
+    .kid-card strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .kid-card span {
+      display: inline-block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-right: 5px;
+    }
+
+    .label-map {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .label-map div {
+      background: rgba(15,23,42,.62);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .label-map strong {
+      display: block;
+      font-size: 13px;
+      margin: 4px 0;
+    }
+
     .dragging {
       border-color: var(--blue);
       box-shadow: 0 0 0 2px rgba(56,189,248,.18);
@@ -327,31 +376,8 @@
       background: rgba(56,189,248,.07);
     }
 
-    .tabs {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 4px;
-      margin-bottom: 12px;
-    }
-
-    .tab {
-      text-align: center;
-      border-radius: 7px;
-      padding: 8px 4px;
-      color: var(--muted);
-      background: rgba(32,45,68,.6);
-      border: 1px solid transparent;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .tab.active {
-      color: #082f49;
-      background: var(--blue);
-    }
-
     @media (max-width: 880px) {
-      .grid, .board {
+      .grid, .board, .label-map {
         grid-template-columns: 1fr;
       }
 
@@ -367,13 +393,14 @@
       <div>
         <p class="label">Static mockup</p>
         <h1>Kid Daily Quest Run</h1>
-        <p class="note">A focused home loop for kids, plus parent drag ordering by daypart. This is a design artifact, not app code.</p>
+        <p class="note">Left phone: recommended Kid Home. Right panels: vocabulary, one alternate Kid Home layout, and the Parent Portal drag-ordering view. This is a design artifact, not app code.</p>
       </div>
       <p class="pill">Pets removed from the daily flow</p>
     </div>
 
     <section class="grid">
       <div class="phone">
+        <p class="mock-caption">Recommended Kid Home</p>
         <div class="screen">
           <div class="panel">
             <div class="row">
@@ -470,51 +497,54 @@
 
       <div class="option-stack">
         <section class="mock-block">
-          <h2>Option A: Focused Now Card</h2>
-          <p>The home screen emphasizes the current action first. Later and bonus work stays visible, but quieter.</p>
-          <div class="panel">
-            <div class="row">
-              <div>
-                <p class="label">Recommended</p>
-                <h3>Best when kids need a clear next step</h3>
-              </div>
-              <span class="pill">Least clutter</span>
+          <h2>Label Map</h2>
+          <p>These labels belong to different screens. The mockup keeps them separate so the real app does not mix mental models.</p>
+          <div class="label-map">
+            <div>
+              <p class="label">Kid Home sections</p>
+              <strong>Now / Anytime / Later / Bonus</strong>
+              <p class="note">Used for today's action flow.</p>
+            </div>
+            <div>
+              <p class="label">Quests screen tabs</p>
+              <strong>Today / Upcoming / Recent</strong>
+              <p class="note">Used for browsing and history.</p>
+            </div>
+            <div>
+              <p class="label">Parent ordering groups</p>
+              <strong>Morning / Afternoon / Evening / Anytime</strong>
+              <p class="note">Used for drag ordering quests.</p>
             </div>
           </div>
         </section>
 
         <section class="mock-block">
-          <h2>Option B: Grouped Daypart Board</h2>
-          <p>A denser version where each daypart is equally visible. Better for older kids, but less direct.</p>
-          <div class="tabs">
-            <div class="tab active">Now</div>
-            <div class="tab">Later</div>
-            <div class="tab">Recent</div>
-          </div>
+          <h2>Alternate Kid Home: Grouped Sections</h2>
+          <p>A denser kid-facing layout. Kids do not drag these cards; this is only another way to display today's run.</p>
           <div class="board">
             <div class="lane">
-              <h3>Morning <span>2</span></h3>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Make your bed</strong><span>10 XP</span></div></div>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Pack backpack</strong><span>15 XP</span></div></div>
+              <h3>Now <span>Morning</span></h3>
+              <div class="kid-card"><strong>Make your bed</strong><span>10 XP</span><span>Ready</span></div>
+              <div class="kid-card"><strong>Pack backpack</strong><span>15 XP</span><span>Photo</span></div>
             </div>
             <div class="lane">
-              <h3>Anytime <span>1</span></h3>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Empty dishwasher</strong><span>20 XP</span></div></div>
+              <h3>Anytime <span>Required</span></h3>
+              <div class="kid-card"><strong>Empty dishwasher</strong><span>20 XP</span><span>Ready</span></div>
             </div>
             <div class="lane">
-              <h3>Evening <span>1</span></h3>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Read before bed</strong><span>15 XP</span></div></div>
+              <h3>Later <span>Evening</span></h3>
+              <div class="kid-card"><strong>Read before bed</strong><span>15 XP</span><span>Later</span></div>
             </div>
             <div class="lane">
               <h3>Bonus <span>1</span></h3>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Wipe counter</strong><span>Optional</span></div></div>
+              <div class="kid-card"><strong>Wipe counter</strong><span>Optional</span><span>10 XP</span></div>
             </div>
           </div>
         </section>
 
         <section class="mock-block">
-          <h2>Parent Drag Ordering</h2>
-          <p>Quest Management groups quests by daypart. Drag within a group to reorder, or drag between groups to change daypart.</p>
+          <h2>Parent Portal: Drag Quest Ordering</h2>
+          <p>Quest Management groups quests by daypart. Parents drag within a group to reorder, or drag between groups to change daypart.</p>
           <div class="board">
             <div class="lane">
               <h3>Morning <span>3</span></h3>
