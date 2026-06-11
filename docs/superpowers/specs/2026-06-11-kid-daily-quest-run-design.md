@@ -1,59 +1,77 @@
-# Kid Daily Quest Run Design
+# Kid Daily Chore Plan Design
 
 ## Goal
 
-Make the kid home screen the primary place where kids do today's quests. The experience should answer "what should I do now?", support direct completion from the home screen, and remove the pet system so the app feels cleaner and more focused.
+Make the kid home screen the primary place where kids do today's chores. The experience should answer "what should I do now?", support direct completion from the home screen, and remove the pet system so the app feels cleaner and more focused.
 
 ## Product Decisions
 
 - Kid Home becomes the daily action surface.
-- Quests becomes a browse, schedule, and history surface.
-- Quest timing lives on the quest itself, not per assignment.
-- Quest ordering is manual inside each daypart.
-- Required `Anytime` quests appear after the current daypart's required quests.
-- Optional quests stay separate as `Bonus`.
+- Chores/Quests becomes a browse, schedule, and history surface. User-facing copy should move toward "chores" even if route names still say `quests`.
+- Chore timing lives on the chore itself, not per assignment.
+- Chore ordering is manual inside each daypart.
+- Required `Anytime` chores appear after the current daypart's required chores.
+- Optional chores stay separate as `Bonus`.
 - Parent ordering uses drag from the first version.
 - Pets are removed from active product behavior and UI.
+- The focused Kid Home layout is the implementation target. The compact grouped mockup is reference-only.
 
 ## Navigation And Labels
 
 Use distinct labels for distinct surfaces:
 
 - Kid Home uses section labels: `Now`, `Anytime`, `Later`, `Bonus`, and `Done Today`.
-- Quests uses tabs: `Today`, `Upcoming`, and `Recent`.
-- Parent Quest Management uses daypart groups: `Morning`, `Afternoon`, `Evening`, and `Anytime`.
+- Chores/Quests uses tabs: `Today`, `Upcoming`, and `Recent`.
+- Parent Chore Management uses daypart groups: `Morning`, `Afternoon`, `Evening`, and `Anytime`.
 
-`Now`, `Anytime`, `Later`, and `Bonus` are not navigation tabs. They are visible sections in the kid's daily action flow. `Today`, `Upcoming`, and `Recent` belong only to the Quests browse/history screen.
+`Now`, `Anytime`, `Later`, and `Bonus` are not navigation tabs. They are visible sections in the kid's daily action flow. `Today`, `Upcoming`, and `Recent` belong only to the browse/history screen.
+
+Kid-facing language uses:
+
+- "chore" over "quest"
+- "points" or "pts" over "XP"
+- "Mark Done" and "Submit for Approval" over "Complete Quest"
+
+The brand can remain ChoreQuest. This is a language shift, not a requirement to rename every internal identifier in the first pass.
 
 ## Dayparts And Ordering
 
-Add quest-level fields:
+Add chore-level fields:
 
 - `daypart`: one of `morning`, `afternoon`, `evening`, or `anytime`.
 - `sort_order`: an internal integer used to preserve manual order within a daypart.
 
 Parents should never type a sort number. Parent-facing controls are:
 
-- A daypart segmented control or select in quest create/edit.
-- A drag-reorder Quest Management view grouped by daypart.
-- Drag handles on each quest row.
+- A daypart segmented control or select in chore create/edit.
+- A drag-reorder Chore Management view grouped by daypart.
+- Drag handles on each chore row.
 - Immediate visual feedback while dragging.
 
 Default behavior:
 
-- Existing quests migrate to `anytime`.
-- Existing quests receive stable `sort_order` values based on current ID or created order.
-- New quests default to `anytime` and append to the end of that daypart unless the parent changes it.
+- Existing chores migrate to `anytime`.
+- Existing chores receive stable `sort_order` values based on current ID or created order.
+- New chores default to `anytime` and append to the end of that daypart unless the parent changes it.
 
 ## Kid Home
 
 Kid Home should use today's assignments and group them into:
 
-- `Now`: required quests for the current daypart, ordered by `sort_order`.
-- `Anytime`: required anytime quests, shown after `Now`.
-- `Later`: required quests for later dayparts.
-- `Bonus`: optional quests, kept out of the required completion path.
-- `Done Today`: compact completion state once all required quests are submitted or approved.
+- `Now`: required chores for the current daypart, ordered by `sort_order`.
+- `Anytime`: required anytime chores, shown after `Now`.
+- `Later`: required chores for later dayparts.
+- `Bonus`: optional chores, kept out of the required completion path.
+- `Done Today`: compact completion state once all required chores are submitted or approved.
+
+Empty sections disappear. If there are no `Now` chores, do not render an empty `Now` block. If there are no bonus chores, hide `Bonus`. If all required chores are submitted or approved, show `Done Today` instead of empty action sections.
+
+The top summary card should focus on today's chore state:
+
+- Done today, such as `2/5`.
+- Left today, such as `3`.
+- Next up, such as `Morning` or `Anytime`.
+- Streak may appear as a small motivational pill, but total lifetime points should not be mixed into the today summary. If points balance is shown, label it clearly as `Points Balance` outside the today card.
 
 The current daypart can be computed from local app time using the family rollover timezone. The first version should use simple windows:
 
@@ -65,46 +83,48 @@ This is intentionally broad. We are not adding exact due times, reminders, or ov
 
 ## Direct Completion
 
-Actionable quests on Kid Home can be completed in place.
+Actionable chores on Kid Home can be completed in place.
 
-- Non-photo quests show a primary `Complete Quest` button.
-- Photo-required quests show an inline photo picker and then `Submit Quest`.
-- Submitted quests move out of the action queue and into a compact awaiting-approval or completed row.
+- Non-photo chores show `Mark Done`.
+- Photo-required chores show an inline photo picker and then `Submit for Approval`.
+- Submitted chores move out of the action queue and into a compact awaiting-approval or completed row.
 - The page refreshes local assignment state after submission.
 - The existing completion endpoint remains the source of truth.
+
+The current `Now` chores should be visually emphasized and can show expanded actions by default. `Anytime`, `Later`, and `Bonus` chores should still be actionable from Home. They can render more compactly, but tapping or expanding them reveals the same inline completion/photo controls. Kids should not be sent to the old Chores/Quests screen just to complete a different chore.
 
 Completion feedback should be short and useful:
 
 - Show a success state on the completed row.
 - Update progress immediately after the API response.
-- If all required quests are done, show the daily done state and point toward the spin wheel when enabled.
+- If all required chores are done, show the daily done state and point toward the spin wheel when enabled.
 
-## Quests Screen
+## Chores/Quests Screen
 
-The Quests screen remains useful, but it stops being the main daily execution surface.
+The Chores/Quests screen remains useful, but it stops being the main daily execution surface.
 
-Kid Quests should become:
+Kid Chores/Quests should become:
 
 - Today, Upcoming, and Recent browsing.
 - Filters by category and difficulty.
 - Schedule/status context.
-- History for submitted, approved, skipped, and missed quests.
-- A path to quest details.
+- History for submitted, approved, skipped, and missed chores.
+- A path to chore details.
 
-Kid Quests list cards should not include inline completion controls once Kid Home supports the full completion flow. Chore Detail can keep a secondary completion fallback for direct links, but Home is the primary daily action surface.
+Kid Chores/Quests list cards should not include inline completion controls once Kid Home supports the full completion flow. Chore Detail can keep a secondary completion fallback for direct links, but Home is the primary daily action surface.
 
-## Parent Quest Management
+## Parent Chore Management
 
-Parent Quest Management should gain a grouped ordering mode:
+Parent Chore Management should gain a grouped ordering mode:
 
-- Group quests by Morning, Afternoon, Evening, and Anytime.
+- Group chores by Morning, Afternoon, Evening, and Anytime.
 - Each group contains draggable rows.
 - Rows show title, category, points, difficulty, optional/photo flags, and assignment status.
 - Dragging within a group changes `sort_order`.
 - Dragging between groups changes both `daypart` and `sort_order`.
 - Reordering saves optimistically with a visible saving state and rollback on API failure.
 
-Quest create/edit should include daypart selection. Reordering is handled in the grouped management view rather than inside the modal.
+Chore create/edit should include daypart selection. Reordering is handled in the grouped management view rather than inside the modal.
 
 ## Pet Removal
 
@@ -124,7 +144,7 @@ The first implementation should not destructively delete production user JSON da
 
 Backend:
 
-- Add a `QuestDaypart` enum.
+- Add a `ChoreDaypart` enum.
 - Add `daypart` and `sort_order` to the `chores` table.
 - Include these fields in chore, calendar, and kid assignment responses.
 - Add a parent-only reorder endpoint that accepts ordered chore IDs grouped by daypart.
@@ -134,14 +154,14 @@ Frontend:
 
 - Add tested helper logic for grouping today's kid assignments by daypart and status.
 - Kid Home consumes today's assignments and renders the daily run groups.
-- Quest Management consumes chore metadata and exposes drag ordering.
-- Quests consumes the same metadata for browsing and labels.
+- Chore Management consumes chore metadata and exposes drag ordering.
+- Chores/Quests consumes the same metadata for browsing and labels.
 
 ## Error Handling
 
-- If daypart is missing or invalid, treat the quest as `anytime`.
+- If daypart is missing or invalid, treat the chore as `anytime`.
 - If sort order is missing, sort after ordered items by title or ID.
-- If completion fails, keep the quest in place and show a compact error.
+- If completion fails, keep the chore in place and show a compact error.
 - If reorder saving fails, restore the previous order and show an error banner.
 - If photo upload is required and no file is selected, keep the submit button disabled.
 
@@ -156,7 +176,7 @@ Backend tests:
 
 Frontend tests:
 
-- Kid assignment grouping puts current daypart required quests first, then required anytime, then later, then bonus.
+- Kid assignment grouping puts current daypart required chores first, then required anytime, then later, then bonus.
 - Grouping falls back safely for missing daypart/order.
 - Completion controls require photo when needed.
 - Parent reorder helper produces a stable payload after drag between dayparts.
@@ -167,7 +187,7 @@ Verification:
 - Run focused frontend helper tests.
 - Run the Vite config test.
 - Run the frontend production build.
-- Manually inspect Kid Home and parent Quest Management on mobile and desktop widths.
+- Manually inspect Kid Home and parent Chore Management on mobile and desktop widths.
 
 ## Static Mockup
 

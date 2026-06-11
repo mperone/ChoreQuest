@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ChoreQuest Kid Daily Quest Run Mockup</title>
+  <title>ChoreQuest Kid Daily Home Mockup</title>
   <style>
     :root {
       --navy: #111827;
@@ -174,7 +174,7 @@
       white-space: nowrap;
     }
 
-    .quest {
+    .chore {
       display: grid;
       grid-template-columns: 4px 1fr;
       gap: 10px;
@@ -198,7 +198,7 @@
       background: var(--green);
     }
 
-    .quest h3 {
+    .chore h3 {
       font-size: 14px;
       margin-bottom: 5px;
     }
@@ -233,8 +233,25 @@
       padding: 9px 12px;
     }
 
+    .inline-action {
+      margin-top: 9px;
+      border: 1px solid rgba(56,189,248,.5);
+      border-radius: 7px;
+      background: rgba(56,189,248,.1);
+      color: var(--blue);
+      font-weight: 800;
+      font-size: 12px;
+      padding: 7px 10px;
+    }
+
+    .summary-copy {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
     .compact {
-      opacity: .72;
+      background: rgba(24,34,53,.66);
     }
 
     .compact .primary, .compact .secondary {
@@ -392,8 +409,8 @@
     <div class="topline">
       <div>
         <p class="label">Static mockup</p>
-        <h1>Kid Daily Quest Run</h1>
-        <p class="note">Left phone: recommended Kid Home. Right panels: vocabulary, one alternate Kid Home layout, and the Parent Portal drag-ordering view. This is a design artifact, not app code.</p>
+        <h1>Kid Daily Home</h1>
+        <p class="note">Left phone: recommended Kid Home. Right panels: vocabulary, one compact reference layout, and the Parent Portal drag-ordering view. This is a design artifact, not app code.</p>
       </div>
       <p class="pill">Pets removed from the daily flow</p>
     </div>
@@ -406,14 +423,15 @@
             <div class="row">
               <div>
                 <p class="label">Good morning</p>
-                <h2>Today's Quest Run</h2>
+                <h2>Mia's Day</h2>
               </div>
-              <span class="pill">2 of 5 done</span>
+              <span class="pill">6 day streak</span>
             </div>
+            <p class="summary-copy">2 of 5 chores done today</p>
             <div class="stats">
-              <div class="stat"><span class="label">XP</span><strong>45</strong></div>
-              <div class="stat"><span class="label">Streak</span><strong>6d</strong></div>
-              <div class="stat"><span class="label">Left</span><strong>3</strong></div>
+              <div class="stat"><span class="label">Done Today</span><strong>2/5</strong></div>
+              <div class="stat"><span class="label">Left Today</span><strong>3</strong></div>
+              <div class="stat"><span class="label">Next Up</span><strong>Morning</strong></div>
             </div>
             <div class="progress"><div class="bar"></div></div>
           </div>
@@ -422,29 +440,29 @@
             <h2>Now</h2>
             <span class="pill">Morning</span>
           </div>
-          <article class="quest">
+          <article class="chore">
             <div class="accent"></div>
             <div>
               <h3>Make your bed</h3>
               <div class="meta">
-                <span>10 XP</span>
+                <span>10 pts</span>
                 <span>Easy</span>
                 <span>Bedroom</span>
               </div>
-              <button class="primary">Complete Quest</button>
+              <button class="primary">Mark Done</button>
             </div>
           </article>
-          <article class="quest">
+          <article class="chore">
             <div class="accent"></div>
             <div>
               <h3>Pack backpack</h3>
               <div class="meta">
-                <span>15 XP</span>
+                <span>15 pts</span>
                 <span>Photo proof</span>
                 <span>School</span>
               </div>
               <button class="secondary">Attach proof photo</button>
-              <button class="primary">Submit Quest</button>
+              <button class="primary">Submit for Approval</button>
             </div>
           </article>
 
@@ -452,14 +470,15 @@
             <h2>Anytime</h2>
             <span class="pill">Required</span>
           </div>
-          <article class="quest compact">
+          <article class="chore compact">
             <div class="accent green"></div>
             <div>
               <h3>Empty dishwasher</h3>
               <div class="meta">
-                <span>20 XP</span>
+                <span>20 pts</span>
                 <span>Kitchen</span>
               </div>
+              <button class="inline-action">Mark Done</button>
             </div>
           </article>
 
@@ -467,14 +486,15 @@
             <h2>Later</h2>
             <span class="pill">Evening</span>
           </div>
-          <article class="quest compact">
+          <article class="chore compact">
             <div class="accent gold"></div>
             <div>
               <h3>Read before bed</h3>
               <div class="meta">
-                <span>15 XP</span>
+                <span>15 pts</span>
                 <span>Evening</span>
               </div>
+              <button class="inline-action">Expand</button>
             </div>
           </article>
 
@@ -482,14 +502,15 @@
             <h2>Bonus</h2>
             <span class="pill">Optional</span>
           </div>
-          <article class="quest compact">
+          <article class="chore compact">
             <div class="accent gold"></div>
             <div>
               <h3>Wipe bathroom counter</h3>
               <div class="meta">
-                <span>10 XP</span>
+                <span>10 pts</span>
                 <span>Bonus</span>
               </div>
+              <button class="inline-action">Mark Done</button>
             </div>
           </article>
         </div>
@@ -506,66 +527,66 @@
               <p class="note">Used for today's action flow.</p>
             </div>
             <div>
-              <p class="label">Quests screen tabs</p>
+              <p class="label">Chores screen tabs</p>
               <strong>Today / Upcoming / Recent</strong>
               <p class="note">Used for browsing and history.</p>
             </div>
             <div>
               <p class="label">Parent ordering groups</p>
               <strong>Morning / Afternoon / Evening / Anytime</strong>
-              <p class="note">Used for drag ordering quests.</p>
+              <p class="note">Used for drag ordering chores.</p>
             </div>
           </div>
         </section>
 
         <section class="mock-block">
-          <h2>Alternate Kid Home: Grouped Sections</h2>
-          <p>A denser kid-facing layout. Kids do not drag these cards; this is only another way to display today's run.</p>
+          <h2>Reference Only: Compact Grouped Home</h2>
+          <p>This saves vertical space, but it is less warm and less engaging. The focused phone layout is the recommended direction.</p>
           <div class="board">
             <div class="lane">
               <h3>Now <span>Morning</span></h3>
-              <div class="kid-card"><strong>Make your bed</strong><span>10 XP</span><span>Ready</span></div>
-              <div class="kid-card"><strong>Pack backpack</strong><span>15 XP</span><span>Photo</span></div>
+              <div class="kid-card"><strong>Make your bed</strong><span>10 pts</span><span>Ready</span></div>
+              <div class="kid-card"><strong>Pack backpack</strong><span>15 pts</span><span>Photo</span></div>
             </div>
             <div class="lane">
               <h3>Anytime <span>Required</span></h3>
-              <div class="kid-card"><strong>Empty dishwasher</strong><span>20 XP</span><span>Ready</span></div>
+              <div class="kid-card"><strong>Empty dishwasher</strong><span>20 pts</span><span>Ready</span></div>
             </div>
             <div class="lane">
               <h3>Later <span>Evening</span></h3>
-              <div class="kid-card"><strong>Read before bed</strong><span>15 XP</span><span>Later</span></div>
+              <div class="kid-card"><strong>Read before bed</strong><span>15 pts</span><span>Later</span></div>
             </div>
             <div class="lane">
               <h3>Bonus <span>1</span></h3>
-              <div class="kid-card"><strong>Wipe counter</strong><span>Optional</span><span>10 XP</span></div>
+              <div class="kid-card"><strong>Wipe counter</strong><span>Optional</span><span>10 pts</span></div>
             </div>
           </div>
         </section>
 
         <section class="mock-block">
-          <h2>Parent Portal: Drag Quest Ordering</h2>
-          <p>Quest Management groups quests by daypart. Parents drag within a group to reorder, or drag between groups to change daypart.</p>
+          <h2>Parent Portal: Drag Chore Ordering</h2>
+          <p>Chore Management groups chores by daypart. Parents drag within a group to reorder, or drag between groups to change daypart.</p>
           <div class="board">
             <div class="lane">
               <h3>Morning <span>3</span></h3>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Make your bed</strong><span>Bedroom</span><span>10 XP</span></div></div>
-              <div class="drag-row dragging"><div class="handle">::</div><div><strong>Brush teeth</strong><span>Bathroom</span><span>10 XP</span></div></div>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Pack backpack</strong><span>School</span><span>15 XP</span></div></div>
+              <div class="drag-row"><div class="handle">::</div><div><strong>Make your bed</strong><span>Bedroom</span><span>10 pts</span></div></div>
+              <div class="drag-row dragging"><div class="handle">::</div><div><strong>Brush teeth</strong><span>Bathroom</span><span>10 pts</span></div></div>
+              <div class="drag-row"><div class="handle">::</div><div><strong>Pack backpack</strong><span>School</span><span>15 pts</span></div></div>
             </div>
             <div class="lane">
               <h3>Afternoon <span>1</span></h3>
               <div class="drop">Drop here to move to Afternoon</div>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Homework check</strong><span>School</span><span>20 XP</span></div></div>
+              <div class="drag-row"><div class="handle">::</div><div><strong>Homework check</strong><span>School</span><span>20 pts</span></div></div>
             </div>
             <div class="lane">
               <h3>Evening <span>2</span></h3>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Shower</strong><span>Bathroom</span><span>15 XP</span></div></div>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Read before bed</strong><span>Reading</span><span>15 XP</span></div></div>
+              <div class="drag-row"><div class="handle">::</div><div><strong>Shower</strong><span>Bathroom</span><span>15 pts</span></div></div>
+              <div class="drag-row"><div class="handle">::</div><div><strong>Read before bed</strong><span>Reading</span><span>15 pts</span></div></div>
             </div>
             <div class="lane">
               <h3>Anytime <span>2</span></h3>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Empty dishwasher</strong><span>Kitchen</span><span>20 XP</span></div></div>
-              <div class="drag-row"><div class="handle">::</div><div><strong>Put laundry away</strong><span>Laundry</span><span>20 XP</span></div></div>
+              <div class="drag-row"><div class="handle">::</div><div><strong>Empty dishwasher</strong><span>Kitchen</span><span>20 pts</span></div></div>
+              <div class="drag-row"><div class="handle">::</div><div><strong>Put laundry away</strong><span>Laundry</span><span>20 pts</span></div></div>
             </div>
           </div>
         </section>
