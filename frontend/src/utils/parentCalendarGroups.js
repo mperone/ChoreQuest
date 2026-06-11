@@ -1,5 +1,17 @@
 const DONE_STATUSES = new Set(['completed', 'verified', 'skipped'])
 
+export const DEFAULT_PARENT_CALENDAR_VIEW = 'kid'
+
+export const PARENT_STATUS_TONE_CLASSES = {
+  due: 'text-accent border-accent/30 bg-accent/10',
+  scheduled: 'text-cyan-500 border-cyan-500/30 bg-cyan-500/10',
+  overdue: 'text-crimson border-crimson/30 bg-crimson/10',
+  completed: 'text-emerald border-emerald/30 bg-emerald/10',
+  approved: 'text-emerald border-emerald/45 bg-emerald/15',
+  muted: 'text-muted border-border bg-surface-raised/40',
+  optional: 'text-gold border-gold/30 bg-gold/10',
+}
+
 function assignmentTitle(assignment) {
   return assignment?.chore?.title || assignment?.chore_title || 'Quest'
 }
@@ -111,7 +123,7 @@ export function parentCalendarStatus(assignment, today) {
     return { label: 'Overdue', tone: 'overdue' }
   }
   if (assignment?.date === today) {
-    return { label: 'Due today', tone: 'pending' }
+    return { label: 'Due today', tone: 'due' }
   }
-  return { label: 'Scheduled', tone: 'pending' }
+  return { label: 'Scheduled', tone: 'scheduled' }
 }

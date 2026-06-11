@@ -12,6 +12,8 @@ import {
 } from '../utils/calendarWeek';
 import { todayISOInTimeZone } from '../utils/daytime';
 import {
+  DEFAULT_PARENT_CALENDAR_VIEW,
+  PARENT_STATUS_TONE_CLASSES,
   groupAssignmentsByChore,
   groupAssignmentsByKid,
   parentCalendarStatus,
@@ -72,15 +74,6 @@ function statusStyle(assignment, dayStr, today) {
   };
 }
 
-const STATUS_TONE_CLASSES = {
-  pending: 'text-gold border-gold/30 bg-gold/10',
-  overdue: 'text-crimson border-crimson/30 bg-crimson/10',
-  completed: 'text-emerald border-emerald/30 bg-emerald/10',
-  approved: 'text-accent border-accent/30 bg-accent/10',
-  muted: 'text-muted border-border bg-surface-raised/40',
-  optional: 'text-gold border-gold/30 bg-gold/10',
-};
-
 function parentGroupClass(group, dayStr, today) {
   const hasOverdue = group.items.some(
     (item) =>
@@ -101,7 +94,7 @@ function ParentStatusBadge({ assignment, today }) {
   return (
     <span
       className={`inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-md text-[10px] leading-tight border ${
-        STATUS_TONE_CLASSES[status.tone] || STATUS_TONE_CLASSES.pending
+        PARENT_STATUS_TONE_CLASSES[status.tone] || PARENT_STATUS_TONE_CLASSES.due
       }`}
     >
       {status.label}
@@ -216,7 +209,7 @@ export default function Calendar() {
 
   const [startDate, setStartDate] = useState(() => sundayWeekStart(familyToday));
   const [assignments, setAssignments] = useState({});
-  const [parentCalendarView, setParentCalendarView] = useState('quest');
+  const [parentCalendarView, setParentCalendarView] = useState(DEFAULT_PARENT_CALENDAR_VIEW);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
