@@ -21,6 +21,7 @@ import { useAuth } from '../hooks/useAuth';
 import AvatarDisplay from '../components/AvatarDisplay';
 import Modal from '../components/Modal';
 import { assignmentActionState } from '../utils/assignmentActions';
+import { toISO } from '../utils/calendarWeek';
 
 export default function ParentDashboard() {
   const { user } = useAuth();
@@ -55,7 +56,7 @@ export default function ParentDashboard() {
 
       setFamilyStats(familyRes);
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = toISO(new Date());
       const todayAssignments = (calendarRes.days && calendarRes.days[today]) || [];
       const needsVerification = todayAssignments.filter(
         (a) => a.status === 'completed'

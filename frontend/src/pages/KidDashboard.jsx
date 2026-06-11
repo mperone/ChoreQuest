@@ -21,6 +21,7 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
+import { mondayWeekStart, toISO } from '../utils/calendarWeek';
 import { themedTitle } from '../utils/questThemeText';
 import PointCounter from '../components/PointCounter';
 import StreakDisplay from '../components/StreakDisplay';
@@ -34,16 +35,11 @@ import { renderPet, renderPetExtras, renderPetAccessory, buildPetColors } from '
 // ---------- helpers ----------
 
 function getMondayOfThisWeek() {
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun, 1=Mon, ...
-  const diff = day === 0 ? -6 : 1 - day;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diff);
-  return monday.toISOString().slice(0, 10);
+  return mondayWeekStart(toISO(new Date()));
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return toISO(new Date());
 }
 
 function difficultyLabel(difficulty) {

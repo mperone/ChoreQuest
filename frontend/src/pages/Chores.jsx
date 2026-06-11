@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
 import { formatScheduleSummary } from '../utils/scheduleDays';
+import { toISO } from '../utils/calendarWeek';
 import {
   filterKidQuestItems,
   groupKidQuestAssignments,
@@ -155,7 +156,7 @@ function KidAssignmentMeta({ item, today }) {
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return toISO(new Date());
 }
 
 export default function Chores() {

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
+import { toISO } from '../utils/calendarWeek';
 import { themedTitle, themedDescription } from '../utils/questThemeText';
 import { formatScheduleSummary } from '../utils/scheduleDays';
 import {
@@ -257,7 +258,7 @@ export default function ChoreDetail() {
 
   if (!chore) return null;
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = toISO(new Date());
   const { today: todayAssignments, upcoming, recent } = splitQuestAssignments(assignments, today);
   const todayAssignment = todayAssignments.find((a) => a.user_id === user?.id) || todayAssignments[0];
   const hasPendingToday = isKid && todayAssignment && assignmentActionState(todayAssignment).canSkip;

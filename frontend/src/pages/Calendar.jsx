@@ -102,7 +102,7 @@ function ParentStatusBadge({ assignment, today }) {
   const status = parentCalendarStatus(assignment, today);
   return (
     <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] leading-tight border ${
+      className={`inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-md text-[10px] leading-tight border ${
         STATUS_TONE_CLASSES[status.tone] || STATUS_TONE_CLASSES.pending
       }`}
     >
@@ -160,42 +160,46 @@ function ParentCalendarGroup({
           return (
             <div
               key={assignment.id}
-              className="flex items-start gap-1.5 rounded-md border border-border/60 bg-surface-raised/20 px-2 py-1.5"
+              className="rounded-md border border-border/60 bg-surface-raised/20 px-2 py-1.5"
             >
-              <button
-                type="button"
-                onClick={() => onNavigate(assignment.chore_id || assignment.chore?.id)}
-                className="min-w-0 flex-1 text-left text-xs text-muted hover:text-cream transition-colors leading-snug break-words"
-                title={label}
-              >
-                <span>{label}</span>
-                {assignment.is_optional && (
-                  <span className="ml-1 inline-flex items-center gap-0.5 text-gold">
-                    <Sparkles size={10} />
-                    Bonus
-                  </span>
-                )}
-              </button>
-              <ParentStatusBadge assignment={assignment} today={today} />
-              {canRemove && (
+              <div className="flex items-start justify-between gap-1.5">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(assignment);
-                  }}
-                  disabled={removingId === assignment.id}
-                  className="p-0.5 rounded text-muted hover:text-crimson transition-colors disabled:opacity-50"
-                  title="Remove this assignment"
-                  aria-label="Remove this assignment"
+                  onClick={() => onNavigate(assignment.chore_id || assignment.chore?.id)}
+                  className="min-w-0 flex-1 text-left text-xs text-muted hover:text-cream transition-colors leading-snug break-words"
+                  title={label}
                 >
-                  {removingId === assignment.id ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <X size={12} />
+                  <span>{label}</span>
+                  {assignment.is_optional && (
+                    <span className="ml-1 inline-flex items-center gap-0.5 text-gold">
+                      <Sparkles size={10} />
+                      Bonus
+                    </span>
                   )}
                 </button>
-              )}
+                {canRemove && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(assignment);
+                    }}
+                    disabled={removingId === assignment.id}
+                    className="p-0.5 rounded text-muted hover:text-crimson transition-colors disabled:opacity-50 flex-shrink-0"
+                    title="Remove this assignment"
+                    aria-label="Remove this assignment"
+                  >
+                    {removingId === assignment.id ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <X size={12} />
+                    )}
+                  </button>
+                )}
+              </div>
+              <div className="mt-1 flex items-center gap-1.5">
+                <ParentStatusBadge assignment={assignment} today={today} />
+              </div>
             </div>
           );
         })}
