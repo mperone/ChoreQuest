@@ -14,7 +14,7 @@ export const DAILY_SECTION_META = {
   bonus: { id: 'bonus', title: 'Bonus' },
 }
 
-const REQUIRED_DONE_STATUSES = new Set(['completed', 'verified', 'skipped'])
+const REQUIRED_DONE_STATUSES = new Set(['completed', 'verified'])
 
 export function currentDaypartForHour(hour) {
   if (hour < 12) return 'morning'

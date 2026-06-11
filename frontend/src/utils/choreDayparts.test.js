@@ -79,6 +79,84 @@ test('hides empty daily groups and sorts by daypart order then sort order', () =
   assert.deepEqual(groups.now.items.map((entry) => entry.title), ['First', 'Second'])
 })
 
+test('keeps skipped required chores left and actionable', () => {
+  const groups = groupDailyAssignments(
+    [
+      item({ id: 1, title: 'Try again', daypart: 'morning', status: 'skipped' }),
+    ],
+    { currentDaypart: 'morning' },
+  )
+
+  assert.deepEqual(groups.now.items.map((entry) => entry.title), ['Try again'])
+  assert.equal(groups.requiredTotal, 1)
+  assert.equal(groups.requiredDone, 0)
+  assert.equal(groups.requiredLeft, 1)
+  assert.equal(groups.nextUp.title, 'Try again')
+})
+
+test('routes past daypart pending chores to anytime', () => {
+  const groups = groupDailyAssignments(
+    [
+      item({ id: 1, title: 'Pack lunch', daypart: 'morning' }),
+    ],
+    { currentDaypart: 'evening' },
+  )
+
+  assert.deepEqual(groups.now.items, [])
+  assert.deepEqual(groups.anytime.items.map((entry) => entry.title), ['Pack lunch'])
+  assert.deepEqual(groups.later.items, [])
+  assert.equal(groups.requiredTotal, 1)
+  assert.equal(groups.requiredLeft, 1)
+  assert.equal(groups.nextUp.title, 'Pack lunch')
+})
+
+test('leaves completed optional chores out of totals and bonus', () => {
+  const groups = groupDailyAssignments(
+    [
+      item({ id: 1, title: 'Bonus done', daypart: 'afternoon', optional: true, status: 'completed' }),
+      item({ id: 2, title: 'Required done', daypart: 'morning', status: 'completed' }),
+    ],
+    { currentDaypart: 'morning' },
+  )
+
+  assert.deepEqual(groups.bonus.items, [])
+  assert.equal(groups.requiredTotal, 1)
+  assert.equal(groups.requiredDone, 1)
+  assert.equal(groups.requiredLeft, 0)
+})
+
+test('chooses deterministic next up from sorted now, anytime, then later', () => {
+  const withNow = groupDailyAssignments(
+    [
+      item({ id: 1, title: 'Now second', daypart: 'morning', sortOrder: 20 }),
+      item({ id: 2, title: 'Anytime first', daypart: 'anytime', sortOrder: 0 }),
+      item({ id: 3, title: 'Now first', daypart: 'morning', sortOrder: 10 }),
+      item({ id: 4, title: 'Later first', daypart: 'afternoon', sortOrder: 0 }),
+    ],
+    { currentDaypart: 'morning' },
+  )
+  const withAnytime = groupDailyAssignments(
+    [
+      item({ id: 5, title: 'Later first', daypart: 'afternoon', sortOrder: 0 }),
+      item({ id: 6, title: 'Anytime second', daypart: 'anytime', sortOrder: 20 }),
+      item({ id: 7, title: 'Anytime first', daypart: 'anytime', sortOrder: 10 }),
+    ],
+    { currentDaypart: 'morning' },
+  )
+  const withLater = groupDailyAssignments(
+    [
+      item({ id: 8, title: 'Evening first', daypart: 'evening', sortOrder: 0 }),
+      item({ id: 9, title: 'Afternoon second', daypart: 'afternoon', sortOrder: 20 }),
+      item({ id: 10, title: 'Afternoon first', daypart: 'afternoon', sortOrder: 10 }),
+    ],
+    { currentDaypart: 'morning' },
+  )
+
+  assert.equal(withNow.nextUp.title, 'Now first')
+  assert.equal(withAnytime.nextUp.title, 'Anytime first')
+  assert.equal(withLater.nextUp.title, 'Afternoon first')
+})
+
 test('builds parent reorder payload from grouped chore ids', () => {
   const payload = buildChoreReorderPayload({
     morning: [3, 2],
