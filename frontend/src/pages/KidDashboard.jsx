@@ -302,6 +302,7 @@ export default function KidDashboard() {
   const [currentDaypart, setCurrentDaypart] = useState(() => (
     currentDaypartForDateInTimeZone(new Date(), daily_rollover_timezone)
   ));
+  const familyDateRef = useRef(todayISO(daily_rollover_timezone));
   const proofInputRefs = useRef({});
 
   // Board theme — stored in localStorage
@@ -365,14 +366,22 @@ export default function KidDashboard() {
   }, [fetchData]);
 
   useEffect(() => {
-    const refreshDaypart = () => {
+    familyDateRef.current = todayISO(daily_rollover_timezone);
+
+    const refreshDaypartAndDate = () => {
       setCurrentDaypart(currentDaypartForDateInTimeZone(new Date(), daily_rollover_timezone));
+
+      const familyDate = todayISO(daily_rollover_timezone);
+      if (familyDateRef.current !== familyDate) {
+        familyDateRef.current = familyDate;
+        fetchData();
+      }
     };
 
-    refreshDaypart();
-    const intervalId = window.setInterval(refreshDaypart, 60 * 1000);
+    refreshDaypartAndDate();
+    const intervalId = window.setInterval(refreshDaypartAndDate, 60 * 1000);
     return () => window.clearInterval(intervalId);
-  }, [daily_rollover_timezone]);
+  }, [daily_rollover_timezone, fetchData]);
 
   const dailyGroups = useMemo(() => (
     groupDailyAssignments(assignments, { currentDaypart })
