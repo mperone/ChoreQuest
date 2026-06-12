@@ -1430,8 +1430,10 @@ async def _approve_assignment(
                 reference_type="streak",
             ))
 
+    achievement_date = assignment.date
+
     await db.commit()
-    await check_achievements(db, kid)
+    await check_achievements(db, kid, activity_date=achievement_date)
     await _deactivate_one_time_rule_if_needed(db, assignment)
 
     db.add(Notification(

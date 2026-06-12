@@ -1,3 +1,5 @@
+import { compareDailyItems } from './choreDayparts.js'
+
 const DONE_STATUSES = new Set(['completed', 'verified', 'skipped'])
 
 export const DEFAULT_PARENT_CALENDAR_VIEW = 'kid'
@@ -46,10 +48,25 @@ function isOptional(assignment) {
 }
 
 function summarizeGroup(group) {
-  group.items.sort((a, b) => compareLabels(a.label, b.label))
+  group.items.sort((a, b) => {
+    if (group.kind === 'kid') {
+      return compareDailyItems(a.assignment, b.assignment) || compareLabels(a.label, b.label)
+    }
+    return compareLabels(a.label, b.label)
+  })
   group.totalCount = group.items.length
   group.doneCount = group.items.filter((item) => isDone(item.status)).length
   return group
+}
+
+function compareChoreGroups(a, b) {
+  return (
+    compareDailyItems(
+      { chore: a.chore || { title: a.title }, id: a.chore_id },
+      { chore: b.chore || { title: b.title }, id: b.chore_id },
+    )
+    || compareLabels(a.title, b.title)
+  )
 }
 
 export function groupAssignmentsByChore(assignments) {
@@ -73,7 +90,7 @@ export function groupAssignmentsByChore(assignments) {
 
   return Array.from(groups.values())
     .map(summarizeGroup)
-    .sort((a, b) => compareLabels(a.title, b.title))
+    .sort(compareChoreGroups)
 }
 
 export function groupAssignmentsByKid(assignments) {

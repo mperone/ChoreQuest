@@ -1,6 +1,6 @@
 /**
- * Themed daily-home overlays — decorative elements that change the
- * dashboard look based on the selected theme.
+ * Themed daily-home overlays that change the kid experience based on the
+ * selected look.
  */
 
 export const BOARD_THEMES = [
@@ -70,7 +70,6 @@ export function getTheme(themeId) {
   return BOARD_THEMES.find((t) => t.id === themeId) || BOARD_THEMES[0];
 }
 
-/** Full-page ambient gradient that sits behind everything */
 export function QuestBoardPageGlow({ themeId }) {
   const theme = getTheme(themeId);
   if (!theme.pageGradient) return null;
@@ -83,7 +82,6 @@ export function QuestBoardPageGlow({ themeId }) {
   );
 }
 
-/** Header panel overlay gradient */
 export function QuestBoardOverlay({ themeId }) {
   const theme = getTheme(themeId);
   if (!theme.headerGradient) return null;
@@ -96,7 +94,6 @@ export function QuestBoardOverlay({ themeId }) {
   );
 }
 
-/** Floating particle emojis that drift behind the header */
 export function QuestBoardParticles({ themeId }) {
   const theme = getTheme(themeId);
   if (!theme.particleEmojis) return null;
@@ -120,35 +117,4 @@ export function QuestBoardParticles({ themeId }) {
       ))}
     </div>
   );
-}
-
-export function QuestBoardDecorations({ themeId }) {
-  const theme = getTheme(themeId);
-  if (themeId === 'default') return null;
-
-  return (
-    <div className="flex items-center gap-1.5 text-xs">
-      <span>{theme.particleEmojis?.[0]}</span>
-      <span
-        className="font-semibold"
-        style={{ color: theme.cardAccent, opacity: 0.8 }}
-      >
-        {theme.label}
-      </span>
-      <span>{theme.icon}</span>
-    </div>
-  );
-}
-
-export function QuestBoardTitle({ themeId, children }) {
-  const titles = {
-    default: 'My Day',
-    halloween: 'Dungeon Quests',
-    christmas: 'Workshop Tasks',
-    space: 'Mission Control',
-    underwater: 'Ocean Missions',
-    enchanted: 'Garden Quests',
-  };
-
-  return <>{titles[themeId] || children || 'My Day'}</>;
 }

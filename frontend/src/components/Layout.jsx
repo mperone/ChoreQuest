@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
+import { useBoardTheme } from '../hooks/useBoardTheme';
 import { useNotifications } from '../hooks/useNotifications';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { DEFAULT_NAV_PATHS, fallbackBackPath, shouldShowBackButton } from '../utils/navigation';
@@ -17,10 +18,12 @@ import {
   X,
   ArrowLeft,
   Loader2,
+  Palette,
   Trophy,
   MoreHorizontal,
 } from 'lucide-react';
 import AvatarDisplay from './AvatarDisplay';
+import { BOARD_THEMES, QuestBoardPageGlow, getTheme } from './QuestBoardTheme';
 
 const ALL_NAV_ITEMS = [
   { label: 'Home', icon: Home, path: '/' },
@@ -48,6 +51,7 @@ export default function Layout({ children }) {
   const settings = useSettings();
   const { chore_trading_enabled } = settings;
   const { syncFromUser } = useTheme();
+  const { boardTheme, setBoardTheme } = useBoardTheme();
   const { notifications, unreadCount, markRead, markAllRead, refresh } = useNotifications();
 
   const handlePullRefresh = useCallback(async () => {
@@ -60,8 +64,10 @@ export default function Layout({ children }) {
     if (user) syncFromUser(user);
   }, [user, syncFromUser]);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showBoardThemes, setShowBoardThemes] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const panelRef = useRef(null);
+  const themeRef = useRef(null);
   const moreRef = useRef(null);
 
   useEffect(() => {
@@ -76,6 +82,17 @@ export default function Layout({ children }) {
   }, [showNotifs]);
 
   useEffect(() => {
+    if (!showBoardThemes) return;
+    const handler = (e) => {
+      if (themeRef.current && !themeRef.current.contains(e.target)) {
+        setShowBoardThemes(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showBoardThemes]);
+
+  useEffect(() => {
     if (!showMore) return;
     const handler = (e) => {
       if (moreRef.current && !moreRef.current.contains(e.target)) {
@@ -88,10 +105,13 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     setShowNotifs(false);
+    setShowBoardThemes(false);
     setShowMore(false);
   }, [location.pathname]);
 
   const isParent = user?.role === 'parent' || user?.role === 'admin';
+  const isKid = user?.role === 'kid';
+  const activeBoardTheme = getTheme(boardTheme);
   const navItems = ALL_NAV_ITEMS.filter((item) => {
     if (item.parentOnly && !isParent) return false;
     if (item.settingKey && settings[item.settingKey] === false) return false;
@@ -114,7 +134,9 @@ export default function Layout({ children }) {
   };
 
   return (
-    <div className="min-h-screen bg-navy flex overflow-x-clip max-w-[100vw]">
+    <div className={`min-h-screen bg-navy flex overflow-x-clip max-w-[100vw] ${isKid ? `quest-board-${boardTheme}` : ''}`}>
+      {isKid && <QuestBoardPageGlow themeId={boardTheme} />}
+
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-[248px] bg-surface border-r border-border min-h-screen fixed left-0 top-0 z-30">
         <div
@@ -195,6 +217,60 @@ export default function Layout({ children }) {
           </div>
 
           <div className="flex items-center gap-1.5">
+            {isKid && (
+              <div className="relative" ref={themeRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowBoardThemes((v) => !v)}
+                  className="flex h-9 min-w-9 items-center justify-center gap-1 rounded-md px-2 text-muted transition-colors hover:bg-surface-raised hover:text-cream"
+                  aria-label="Change look"
+                  title="Change look"
+                >
+                  <Palette size={16} />
+                  <span className="text-sm leading-none">{activeBoardTheme.icon || '*'}</span>
+                </button>
+
+                {showBoardThemes && (
+                  <div className="fixed right-2 left-2 sm:left-auto sm:absolute sm:right-0 top-12 sm:top-full sm:mt-1 sm:w-72 bg-surface border border-border rounded-md overflow-hidden z-50">
+                    <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+                      <span className="text-cream text-sm font-semibold">Choose look</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowBoardThemes(false)}
+                        className="text-muted hover:text-cream transition-colors flex items-center justify-center min-w-[44px] min-h-[44px]"
+                        aria-label="Close looks"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 p-3">
+                      {BOARD_THEMES.map((theme) => (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          onClick={() => {
+                            setBoardTheme(theme.id);
+                            setShowBoardThemes(false);
+                          }}
+                          aria-pressed={boardTheme === theme.id}
+                          className={`flex min-w-0 items-center gap-2 rounded-md border p-2.5 text-left transition-colors ${
+                            boardTheme === theme.id
+                              ? 'border-accent bg-accent/10'
+                              : 'border-border/60 bg-surface-raised/30 hover:border-border-light'
+                          }`}
+                        >
+                          <span className="text-lg leading-none">{theme.icon}</span>
+                          <span className="min-w-0 truncate text-xs font-medium text-cream">
+                            {theme.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Notification Bell */}
             <div className="relative" ref={panelRef}>
               <button

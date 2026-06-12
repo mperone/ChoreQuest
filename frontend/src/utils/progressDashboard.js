@@ -144,3 +144,34 @@ export function summarizeAchievements(achievements = []) {
       .slice(0, 3),
   }
 }
+
+function pluralizeBadge(count) {
+  return count === 1 ? 'badge' : 'badges'
+}
+
+export function summarizeTodayBadges(achievements = []) {
+  const items = (Array.isArray(achievements) ? achievements : []).map((achievement) => {
+    const title = achievement?.title || achievement?.name || 'Badge'
+    const description = achievement?.description || ''
+    const points = achievement?.points_reward || 0
+    const tooltip = description
+      ? `${title}: ${description} +${points} XP`
+      : `${title} +${points} XP`
+
+    return {
+      ...achievement,
+      title,
+      points,
+      tooltip,
+    }
+  })
+  const count = items.length
+  const totalXp = items.reduce((sum, achievement) => sum + achievement.points, 0)
+
+  return {
+    count,
+    totalXp,
+    label: `${count} ${pluralizeBadge(count)} / +${totalXp} XP`,
+    items,
+  }
+}

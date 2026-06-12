@@ -12,13 +12,20 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  Trophy,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
+import { useBoardTheme } from '../hooks/useBoardTheme';
 import { useSettings } from '../hooks/useSettings';
 import { useTheme } from '../hooks/useTheme';
 import { mondayWeekStart } from '../utils/calendarWeek';
 import { todayISOInTimeZone } from '../utils/daytime';
+import { summarizeTodayBadges } from '../utils/progressDashboard';
+import {
+  buildKidHomeThemeStyles,
+  buildPrizeSpinStatus,
+} from '../utils/kidHomeStatus';
 import { themedTitle } from '../utils/questThemeText';
 import {
   currentDaypartForDateInTimeZone,
@@ -28,14 +35,8 @@ import {
 } from '../utils/choreDayparts';
 import SpinWheel from '../components/SpinWheel';
 import RankBadge from '../components/RankBadge';
-import {
-  QuestBoardOverlay,
-  QuestBoardPageGlow,
-  QuestBoardParticles,
-  QuestBoardDecorations,
-  BOARD_THEMES,
-  getTheme,
-} from '../components/QuestBoardTheme';
+import Modal from '../components/Modal';
+import { getTheme } from '../components/QuestBoardTheme';
 
 // ---------- helpers ----------
 
@@ -84,6 +85,33 @@ function proofKeyFor(item) {
   return item.assignment_id || item.id || item.chore_id;
 }
 
+function displayNameFor(user) {
+  return user?.display_name || user?.username || 'Kid';
+}
+
+function initialForName(name) {
+  return (name || 'K').trim().charAt(0).toUpperCase() || 'K';
+}
+
+function isoDateInTimeZone(value, timeZone) {
+  if (!value) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(value));
+    const get = (type) => parts.find((part) => part.type === type)?.value;
+    const year = get('year');
+    const month = get('month');
+    const day = get('day');
+    return year && month && day ? `${year}-${month}-${day}` : '';
+  } catch {
+    return '';
+  }
+}
+
 function ProofThumbnail({ file }) {
   const [previewUrl, setPreviewUrl] = useState('');
 
@@ -124,10 +152,82 @@ const cardVariants = {
 
 const ACTIONABLE_STATUSES = new Set(['pending', 'assigned', 'needs_work']);
 
+const SUMMARY_TONE_CLASSES = {
+  emerald: 'border-emerald/25 bg-emerald/10 text-emerald',
+  gold: 'border-gold/25 bg-gold/10 text-gold',
+  accent: 'border-accent/25 bg-accent/10 text-accent',
+  neutral: 'border-border bg-surface-raised/60 text-cream',
+};
+
+function HeaderStat({ icon: Icon, label, value, detail, toneClass, badge }) {
+  return (
+    <div className={`rounded-md border px-3 py-2 ${toneClass}`}>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold text-cream">{label}</p>
+        {badge}
+      </div>
+      <div className="flex items-center gap-2">
+        <Icon size={15} className="flex-shrink-0" fill="currentColor" />
+        <span className="text-lg font-bold tabular-nums leading-none">{value}</span>
+      </div>
+      <p className="mt-1 text-[11px] text-muted leading-tight">{detail}</p>
+    </div>
+  );
+}
+
+function SummaryTile({ label, value, detail, tone = 'neutral', valueClassName = '' }) {
+  return (
+    <div className={`min-w-0 rounded-md border p-3 ${SUMMARY_TONE_CLASSES[tone]}`}>
+      <p className="text-muted text-[11px] sm:text-xs mb-1">{label}</p>
+      <p className={`font-bold leading-tight break-words ${valueClassName || 'text-xl tabular-nums'}`}>
+        {value}
+      </p>
+      {detail && (
+        <p className="mt-1 text-[11px] text-muted leading-tight">{detail}</p>
+      )}
+    </div>
+  );
+}
+
+function PrizeSpinTile({ status, onOpen }) {
+  const toneClass = status.state === 'ready'
+    ? 'border-emerald/30 bg-emerald/10 text-emerald'
+    : status.state === 'used' || status.state === 'complete'
+    ? 'border-gold/25 bg-gold/10 text-gold'
+    : 'border-border bg-surface-raised/60 text-muted';
+  const Icon = status.state === 'locked' || status.state === 'idle' || status.state === 'off'
+    ? LockKeyhole
+    : Gift;
+
+  return (
+    <div className={`min-w-0 rounded-md border p-3 ${toneClass}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-muted text-[11px] sm:text-xs mb-1">{status.title}</p>
+          <p className="text-cream text-xs font-semibold leading-snug">{status.detail}</p>
+        </div>
+        <Icon size={16} className="mt-0.5 flex-shrink-0" />
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!status.canOpen}
+        className={`mt-2 w-full rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+          status.canOpen
+            ? 'border-emerald/30 bg-emerald text-navy hover:bg-emerald-light'
+            : 'border-border bg-surface text-muted cursor-not-allowed'
+        }`}
+      >
+        {status.buttonLabel}
+      </button>
+    </div>
+  );
+}
+
 function DailyChoreCard({
   item,
   index,
-  activeTheme,
+  surfaceStyle,
   colorTheme,
   proofFile,
   isCompleting,
@@ -154,11 +254,8 @@ function DailyChoreCard({
 
   return (
     <motion.div
-      className="game-panel p-4 transition-all"
-      style={activeTheme.cardAccent ? {
-        borderColor: `${activeTheme.cardAccent}25`,
-        boxShadow: `0 0 12px ${activeTheme.cardAccent}10, inset 0 1px 0 ${activeTheme.cardAccent}08`,
-      } : undefined}
+      className="game-panel p-3.5 transition-all"
+      style={surfaceStyle}
       variants={cardVariants}
       initial="hidden"
       animate="visible"
@@ -166,12 +263,12 @@ function DailyChoreCard({
     >
       <div className="flex items-start gap-3">
         <div
-          className="mt-0.5 w-1 h-14 rounded-full flex-shrink-0"
+          className="mt-0.5 w-1 h-12 rounded-full flex-shrink-0"
           style={{ backgroundColor: categoryColor }}
         />
 
         <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="text-cream text-sm font-semibold leading-snug">
                 {themedChoreTitle}
@@ -207,6 +304,29 @@ function DailyChoreCard({
                 )}
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => isActionable && onMarkDone(item)}
+              disabled={!isActionable || isCompleting}
+              className={`game-btn w-full sm:w-auto sm:min-w-[8.75rem] flex items-center justify-center gap-1.5 shrink-0 !py-2 !px-3 !text-xs ${
+                isActionable ? 'game-btn-blue' : 'bg-surface-raised text-muted border border-border'
+              } ${isCompleting ? 'opacity-60 cursor-wait' : ''}`}
+            >
+              {isCompleting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  Marking...
+                </>
+              ) : status === 'completed' ? (
+                <>
+                  <CheckCircle2 size={13} />
+                  {actionLabel}
+                </>
+              ) : (
+                actionLabel
+              )}
+            </button>
           </div>
 
           {isActionable && requiresPhoto && (
@@ -252,29 +372,6 @@ function DailyChoreCard({
               )}
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={() => isActionable && onMarkDone(item)}
-            disabled={!isActionable || isCompleting}
-            className={`game-btn w-full flex items-center justify-center gap-1.5 ${
-              isActionable ? 'game-btn-blue' : 'bg-surface-raised text-muted border border-border'
-            } ${isCompleting ? 'opacity-60 cursor-wait' : ''}`}
-          >
-            {isCompleting ? (
-              <>
-                <Loader2 size={13} className="animate-spin" />
-                Marking...
-              </>
-            ) : status === 'completed' ? (
-              <>
-                <CheckCircle2 size={13} />
-                {actionLabel}
-              </>
-            ) : (
-              actionLabel
-            )}
-          </button>
         </div>
       </div>
     </motion.div>
@@ -285,6 +382,7 @@ function DailyChoreCard({
 
 export default function KidDashboard() {
   const { user } = useAuth();
+  const { boardTheme } = useBoardTheme();
   const { daily_rollover_timezone, spin_wheel_enabled } = useSettings();
   const { colorTheme } = useTheme();
 
@@ -292,28 +390,20 @@ export default function KidDashboard() {
   const [assignments, setAssignments] = useState([]);
   const [spinAvailability, setSpinAvailability] = useState(null);
   const [myStats, setMyStats] = useState(null);
+  const [todayAchievements, setTodayAchievements] = useState([]);
 
   // ui state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showThemePicker, setShowThemePicker] = useState(false);
   const [completingChoreId, setCompletingChoreId] = useState(null);
   const [photoProofFiles, setPhotoProofFiles] = useState({});
+  const [spinModalOpen, setSpinModalOpen] = useState(false);
   const [currentDaypart, setCurrentDaypart] = useState(() => (
     currentDaypartForDateInTimeZone(new Date(), daily_rollover_timezone)
   ));
   const familyDateRef = useRef(todayISO(daily_rollover_timezone));
   const proofInputRefs = useRef({});
-
-  // Board theme — stored in localStorage
-  const [boardTheme, setBoardTheme] = useState(() =>
-    localStorage.getItem('chorequest-board-theme') || 'default'
-  );
-  const changeBoardTheme = (id) => {
-    setBoardTheme(id);
-    localStorage.setItem('chorequest-board-theme', id);
-    setShowThemePicker(false);
-  };
+  const spinReadySeenRef = useRef(null);
 
   // ---- data fetching ----
 
@@ -323,20 +413,24 @@ export default function KidDashboard() {
       const monday = getMondayOfThisWeek(daily_rollover_timezone);
       const today = todayISO(daily_rollover_timezone);
 
-      const promises = [
+      const [
+        calendarRes,
+        spinRes,
+        statsRes,
+        achievementsRes,
+      ] = await Promise.all([
         api(`/api/calendar?week_start=${monday}`),
-      ];
-      if (spin_wheel_enabled) {
-        promises.push(api('/api/spin/availability'));
-      }
-      promises.push(api('/api/stats/me'));
-
-      const results = await Promise.all(promises);
-      const calendarRes = results[0];
-      const spinRes = spin_wheel_enabled ? results[1] : null;
-      const statsRes = results[spin_wheel_enabled ? 2 : 1];
+        spin_wheel_enabled ? api('/api/spin/availability') : Promise.resolve(null),
+        api('/api/stats/me'),
+        api('/api/stats/achievements/all').catch(() => []),
+      ]);
 
       setMyStats(statsRes);
+      setTodayAchievements((Array.isArray(achievementsRes) ? achievementsRes : [])
+        .filter((achievement) => (
+          achievement.unlocked &&
+          isoDateInTimeZone(achievement.unlocked_at, daily_rollover_timezone) === today
+        )));
 
       // Filter calendar assignments to today and this user only
       const allToday = (calendarRes.days && calendarRes.days[today]) || [];
@@ -389,10 +483,61 @@ export default function KidDashboard() {
   const displaySections = useMemo(() => (
     dailyDisplaySectionsForAssignments(assignments, { currentDaypart })
   ), [assignments, currentDaypart]);
+  const todayBadgeSummary = useMemo(() => (
+    summarizeTodayBadges(todayAchievements)
+  ), [todayAchievements]);
   const requiredComplete = dailyGroups.requiredTotal > 0 && dailyGroups.requiredLeft === 0;
   const activeTheme = getTheme(boardTheme);
+  const themeStyles = useMemo(() => (
+    buildKidHomeThemeStyles(activeTheme)
+  ), [activeTheme]);
+  const spinStatus = useMemo(() => (
+    buildPrizeSpinStatus({
+      spinEnabled: spin_wheel_enabled,
+      requiredTotal: dailyGroups.requiredTotal,
+      requiredLeft: dailyGroups.requiredLeft,
+      requiredComplete,
+      availability: spinAvailability,
+    })
+  ), [
+    spin_wheel_enabled,
+    dailyGroups.requiredTotal,
+    dailyGroups.requiredLeft,
+    requiredComplete,
+    spinAvailability,
+  ]);
+  const kidName = displayNameFor(user);
+  const kidInitial = initialForName(kidName);
+  const homeSurfaceStyle = themeStyles.surfaceStyle;
+  const kidInitialStyle = themeStyles.initialStyle;
   const pointsBalance = myStats?.points_balance ?? user?.points_balance ?? 0;
   const currentStreak = myStats?.current_streak ?? user?.current_streak ?? 0;
+  const dailyProgressPercent = dailyGroups.requiredTotal > 0
+    ? Math.round((dailyGroups.requiredDone / dailyGroups.requiredTotal) * 100)
+    : 0;
+  const nextUpTitle = dailyGroups.nextUp
+    ? themedTitle(
+        choreFromAssignment(dailyGroups.nextUp).title || dailyGroups.nextUp.title,
+        colorTheme,
+      )
+    : dailyGroups.requiredTotal === 0
+    ? 'No chores today'
+    : 'All done';
+
+  useEffect(() => {
+    if (loading) return;
+
+    const ready = spinStatus.state === 'ready';
+    if (spinReadySeenRef.current === null) {
+      spinReadySeenRef.current = ready;
+      return;
+    }
+
+    if (ready && !spinReadySeenRef.current) {
+      setSpinModalOpen(true);
+    }
+    spinReadySeenRef.current = ready;
+  }, [loading, spinStatus.state]);
 
   const setProofInputRef = useCallback((key, node) => {
     if (node) {
@@ -468,92 +613,141 @@ export default function KidDashboard() {
 
   return (
     <div className={`max-w-2xl mx-auto space-y-5 quest-board-${boardTheme}`}>
-      {/* Page-level ambient glow */}
-      <QuestBoardPageGlow themeId={boardTheme} />
-
-      {/* Header with status cards */}
-      <div className="game-panel p-5 relative overflow-hidden">
-        <QuestBoardOverlay themeId={boardTheme} />
-        <QuestBoardParticles themeId={boardTheme} />
-        <div className="relative z-10 space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-muted text-xs font-medium">Today</p>
-              <h1 className="text-cream text-2xl font-semibold leading-tight">My Day</h1>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowThemePicker((v) => !v)}
-              aria-label="Change today look"
-              className="flex items-center justify-center w-9 h-9 rounded-md border border-border hover:border-accent hover:bg-accent/10 text-cream transition-all text-base"
-              title="Change look"
+      <div className="game-panel p-4 sm:p-5 space-y-3" style={homeSurfaceStyle}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-md border border-accent/25 bg-accent/10 text-lg font-bold text-accent"
+              style={kidInitialStyle}
+              aria-hidden="true"
             >
-              {BOARD_THEMES.find((t) => t.id === boardTheme)?.icon || '*'}
-            </button>
+              {kidInitial}
+            </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h1 className="truncate text-xl font-bold text-cream">
+                  {kidName}
+                </h1>
+                {myStats?.rank && <RankBadge rank={myStats.rank} size="sm" />}
+              </div>
+              <p className="text-muted text-xs">Keep the streak moving</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <QuestBoardDecorations themeId={boardTheme} />
-            {myStats?.rank && <RankBadge rank={myStats.rank} size="sm" />}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-md border border-gold/25 bg-gold/10 p-3">
-              <p className="text-cream text-xs font-semibold mb-2">Points</p>
-              <div className="flex items-center gap-2">
-                <Star size={17} className="text-gold fill-gold" />
-                <span className="text-gold text-xl font-bold tabular-nums">
-                  {pointsBalance.toLocaleString()}
+          <div className="grid grid-cols-2 gap-2 sm:w-[18rem]">
+            <HeaderStat
+              icon={Star}
+              label="Points"
+              value={pointsBalance.toLocaleString()}
+              detail="ready to spend"
+              toneClass="border-gold/25 bg-gold/10 text-gold"
+            />
+            <HeaderStat
+              icon={Flame}
+              label="Streak"
+              value={currentStreak}
+              detail="day streak"
+              toneClass="border-orange-400/25 bg-orange-400/10 text-orange-400"
+              badge={myStats?.streak_freeze_available ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-md border border-accent/25 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent"
+                  title="A streak save can protect your streak if you miss a day."
+                  aria-label="Streak save available"
+                >
+                  <ShieldCheck size={10} />
+                  Save
                 </span>
-              </div>
-              <p className="text-muted text-xs mt-1">ready to spend</p>
-            </div>
-
-            <div className="rounded-md border border-orange-400/25 bg-orange-400/10 p-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-cream text-xs font-semibold">Streak</p>
-                {myStats?.streak_freeze_available && (
-                  <span className="inline-flex items-center gap-1 rounded-md border border-accent/25 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-                    <ShieldCheck size={10} />
-                    Save ready
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Flame size={18} className="text-orange-400 fill-orange-400/20" />
-                <span className="text-orange-400 text-xl font-bold tabular-nums">
-                  {currentStreak}
-                </span>
-              </div>
-              <p className="text-muted text-xs mt-1">day streak</p>
-            </div>
+              ) : null}
+            />
           </div>
         </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <SummaryTile
+            label="done today"
+            value={dailyGroups.requiredDone}
+            tone="emerald"
+          />
+          <SummaryTile
+            label="left to do"
+            value={dailyGroups.requiredLeft}
+            tone="gold"
+          />
+          <SummaryTile
+            label="next up"
+            value={nextUpTitle}
+            tone="accent"
+            valueClassName="text-sm text-cream font-semibold"
+          />
+          <PrizeSpinTile
+            status={spinStatus}
+            onOpen={() => {
+              if (spinStatus.canOpen) setSpinModalOpen(true);
+            }}
+          />
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+            <span className="text-muted">Daily progress</span>
+            <span className="text-cream font-semibold">
+              {dailyGroups.requiredTotal === 0
+                ? 'No required chores'
+                : `${dailyGroups.requiredDone}/${dailyGroups.requiredTotal}`}
+            </span>
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full bg-navy border border-border/60">
+            <div
+              className={`h-full rounded-full transition-all ${
+                requiredComplete ? 'bg-emerald' : 'bg-accent'
+              }`}
+              style={{ width: `${dailyProgressPercent}%` }}
+            />
+          </div>
+        </div>
+
+        {todayBadgeSummary.count > 0 && (
+          <div className="border-t border-border/70 pt-2 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Trophy size={15} className="text-gold flex-shrink-0" />
+                <h2 className="truncate text-cream text-sm font-semibold">Today's Badges</h2>
+              </div>
+              <span className="flex-shrink-0 text-xs font-semibold text-gold">
+                {todayBadgeSummary.label}
+              </span>
+            </div>
+            <div
+              className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1"
+              role="list"
+              aria-label="Badges earned today"
+            >
+              {todayBadgeSummary.items.map((achievement) => (
+                <div
+                  key={achievement.id}
+                  className="flex min-w-[8.5rem] max-w-[10rem] flex-none items-center gap-2 rounded-md border border-gold/25 bg-gold/10 px-2.5 py-2"
+                  role="listitem"
+                  tabIndex={0}
+                  title={achievement.tooltip}
+                  aria-label={achievement.tooltip}
+                >
+                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-gold/25 bg-gold/10 text-gold">
+                    <Trophy size={13} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-cream text-xs font-semibold">
+                      {achievement.title}
+                    </p>
+                    <p className="text-gold text-[11px] font-semibold leading-tight">
+                      +{achievement.points} XP
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* Theme Picker */}
-      {showThemePicker && (
-        <div className="game-panel p-4">
-          <h3 className="text-cream text-xs font-medium mb-3">Choose Today Look</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {BOARD_THEMES.map((theme) => (
-              <button
-                key={theme.id}
-                type="button"
-                onClick={() => changeBoardTheme(theme.id)}
-                className={`flex items-center gap-2 p-3 rounded-md border transition-all text-left ${
-                  boardTheme === theme.id
-                    ? 'border-accent bg-accent/10'
-                    : 'border-border/50 bg-surface-raised/30 hover:border-border-light'
-                }`}
-              >
-                <span className="text-xl">{theme.icon}</span>
-                <span className="text-cream text-xs font-medium">{theme.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Error banner */}
       {error && (
@@ -562,48 +756,6 @@ export default function KidDashboard() {
           <span>{error}</span>
         </div>
       )}
-
-      {/* Today overview */}
-      <div className="game-panel p-4">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div>
-            <p className="text-muted text-xs font-medium">Today</p>
-            <h2 className="text-cream text-lg font-semibold">Chores</h2>
-          </div>
-          {requiredComplete && (
-            <span className="inline-flex items-center gap-1 rounded-md border border-emerald/30 bg-emerald/10 px-2 py-1 text-emerald text-xs font-semibold">
-              <CheckCircle2 size={12} />
-              Ready
-            </span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="rounded-md bg-surface-raised/60 border border-border p-3">
-            <p className="text-emerald text-2xl font-bold tabular-nums">
-              {dailyGroups.requiredDone}
-            </p>
-            <p className="text-muted text-xs">done</p>
-          </div>
-          <div className="rounded-md bg-surface-raised/60 border border-border p-3">
-            <p className="text-gold text-2xl font-bold tabular-nums">
-              {dailyGroups.requiredLeft}
-            </p>
-            <p className="text-muted text-xs">left</p>
-          </div>
-        </div>
-
-        <div className="rounded-md border border-border bg-navy/50 p-3">
-          <p className="text-muted text-xs font-medium mb-1">Next up</p>
-          <p className="text-cream text-sm font-semibold">
-            {dailyGroups.nextUp
-              ? themedTitle(choreFromAssignment(dailyGroups.nextUp).title || dailyGroups.nextUp.title, colorTheme)
-              : dailyGroups.requiredTotal === 0
-              ? 'No required chores today'
-              : 'All required chores are done'}
-          </p>
-        </div>
-      </div>
 
       {/* Daily chore sections */}
       {displaySections.length > 0 ? (
@@ -627,7 +779,7 @@ export default function KidDashboard() {
                       key={`${section.id}-${proofKey}`}
                       item={assignment}
                       index={idx}
-                      activeTheme={activeTheme}
+                      surfaceStyle={homeSurfaceStyle}
                       colorTheme={colorTheme}
                       proofFile={photoProofFiles[proofKey]}
                       isCompleting={completingChoreId === choreId}
@@ -645,6 +797,7 @@ export default function KidDashboard() {
       ) : (
         <motion.div
           className="game-panel p-10 flex flex-col items-center gap-3 text-center"
+          style={homeSurfaceStyle}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -659,39 +812,18 @@ export default function KidDashboard() {
         </motion.div>
       )}
 
-      {/* Done Today reward panel */}
-      <div className="game-panel p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Gift size={17} className="text-gold" />
-          <h2 className="text-cream text-sm font-semibold">Done Today</h2>
-        </div>
-
-        {dailyGroups.requiredTotal === 0 ? (
-          <div className="rounded-md border border-border bg-surface-raised/40 p-3 text-sm text-muted">
-            No required chores are due today.
-          </div>
-        ) : !requiredComplete ? (
-          <div className="rounded-md border border-border bg-surface-raised/40 p-3 flex items-center gap-3">
-            <LockKeyhole size={18} className="text-muted flex-shrink-0" />
-            <p className="text-muted text-sm">
-              {spin_wheel_enabled
-                ? `Finish ${dailyGroups.requiredLeft} more to spin.`
-                : `Finish ${dailyGroups.requiredLeft} more today.`}
-            </p>
-          </div>
-        ) : spin_wheel_enabled ? (
-          <SpinWheel
-            availability={spinAvailability}
-            onSpinComplete={() => {
-              fetchData();
-            }}
-          />
-        ) : (
-          <div className="rounded-md border border-emerald/30 bg-emerald/10 p-3 text-sm text-emerald">
-            All required chores are done today.
-          </div>
-        )}
-      </div>
+      <Modal
+        isOpen={spinModalOpen}
+        onClose={() => setSpinModalOpen(false)}
+        title="Today's Prize Spin"
+      >
+        <SpinWheel
+          availability={spinAvailability}
+          onSpinComplete={() => {
+            fetchData();
+          }}
+        />
+      </Modal>
     </div>
   );
 }

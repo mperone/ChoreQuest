@@ -42,7 +42,7 @@ export function currentDaypartForDateInTimeZone(date, timeZone) {
   return currentDaypartForHour(hourInTimeZone(date, timeZone))
 }
 
-function normaliseDaypart(value) {
+export function normaliseDaypart(value) {
   return DAYPART_ORDER.includes(value) ? value : 'anytime'
 }
 
@@ -76,20 +76,25 @@ function assignmentKey(item) {
   return item.assignment_id || item.id || item.chore_id
 }
 
-function daypartRank(daypart) {
+export function daypartRank(daypart) {
   const index = DAYPART_ORDER.indexOf(normaliseDaypart(daypart))
   return index === -1 ? DAYPART_ORDER.length : index
 }
 
-function sortDailyItems(items) {
+export function compareDailyItems(a, b) {
+  const choreA = choreFromAssignment(a)
+  const choreB = choreFromAssignment(b)
+  return (
+    daypartRank(choreA.daypart) - daypartRank(choreB.daypart)
+    || Number(choreA.sort_order || 0) - Number(choreB.sort_order || 0)
+    || String(choreA.title || a.title || '').localeCompare(String(choreB.title || b.title || ''))
+    || Number(a.assignment_id || a.id || 0) - Number(b.assignment_id || b.id || 0)
+  )
+}
+
+export function sortDailyItems(items) {
   return [...items].sort((a, b) => {
-    const choreA = choreFromAssignment(a)
-    const choreB = choreFromAssignment(b)
-    return (
-      daypartRank(choreA.daypart) - daypartRank(choreB.daypart)
-      || Number(choreA.sort_order || 0) - Number(choreB.sort_order || 0)
-      || String(choreA.title || a.title || '').localeCompare(String(choreB.title || b.title || ''))
-    )
+    return compareDailyItems(a, b)
   })
 }
 

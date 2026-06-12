@@ -1,4 +1,5 @@
 from datetime import datetime, date, timezone
+from zoneinfo import ZoneInfo
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models import (
@@ -6,7 +7,7 @@ from backend.models import (
     PointTransaction, PointType, RewardRedemption, Notification, NotificationType,
 )
 from backend.websocket_manager import ws_manager
-from backend.services.daytime import app_today
+from backend.services.daytime import get_daily_rollover_timezone
 
 RETIRED_ACHIEVEMENT_KEYS = frozenset({
     "pet_youngling",
@@ -25,7 +26,30 @@ def is_retired_achievement(achievement: Achievement) -> bool:
     )
 
 
-async def check_achievements(db: AsyncSession, user: User):
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+async def _completed_before_local_hour(
+    db: AsyncSession,
+    completed_at: datetime | None,
+    hour: int,
+) -> bool:
+    if completed_at is None:
+        return False
+    time_zone = ZoneInfo(await get_daily_rollover_timezone(db))
+    local_completed_at = _as_utc(completed_at).astimezone(time_zone)
+    return local_completed_at.hour < hour
+
+
+async def check_achievements(
+    db: AsyncSession,
+    user: User,
+    *,
+    activity_date: date | None = None,
+):
     result = await db.execute(select(Achievement))
     all_achievements = [
         achievement
@@ -41,11 +65,22 @@ async def check_achievements(db: AsyncSession, user: User):
     for achievement in all_achievements:
         if achievement.id in unlocked_ids:
             continue
-        if await _check_criteria(db, user, achievement.criteria):
+        if await _check_criteria(
+            db,
+            user,
+            achievement.criteria,
+            activity_date=activity_date,
+        ):
             await _unlock_achievement(db, user, achievement)
 
 
-async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
+async def _check_criteria(
+    db: AsyncSession,
+    user: User,
+    criteria: dict,
+    *,
+    activity_date: date | None = None,
+) -> bool:
     ctype = criteria.get("type")
 
     if ctype in RETIRED_ACHIEVEMENT_CRITERIA_TYPES:
@@ -55,7 +90,7 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
         result = await db.execute(
             select(func.count()).select_from(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,
-                ChoreAssignment.status.in_([AssignmentStatus.completed, AssignmentStatus.verified]),
+                ChoreAssignment.status == AssignmentStatus.verified,
             )
         )
         count = result.scalar()
@@ -72,12 +107,12 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
         result = await db.execute(
             select(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,
-                ChoreAssignment.status.in_([AssignmentStatus.completed, AssignmentStatus.verified]),
+                ChoreAssignment.status == AssignmentStatus.verified,
                 ChoreAssignment.completed_at.isnot(None),
             )
         )
         for assignment in result.scalars().all():
-            if assignment.completed_at and assignment.completed_at.hour < hour:
+            if await _completed_before_local_hour(db, assignment.completed_at, hour):
                 return True
         return False
 
@@ -95,12 +130,13 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
         return count >= criteria["count"]
 
     elif ctype == "all_daily_before_time":
+        if activity_date is None:
+            return False
         hour = criteria["hour"]
-        today = await app_today(db)
         result = await db.execute(
             select(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,
-                ChoreAssignment.date == today,
+                ChoreAssignment.date == activity_date,
                 ChoreAssignment.is_optional == False,
                 ChoreAssignment.status != AssignmentStatus.skipped,
             )
@@ -109,18 +145,19 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
         if not assignments:
             return False
         for a in assignments:
-            if a.status == AssignmentStatus.pending:
+            if a.status != AssignmentStatus.verified:
                 return False
-            if a.completed_at and a.completed_at.hour >= hour:
+            if not await _completed_before_local_hour(db, a.completed_at, hour):
                 return False
         return True
 
     elif ctype == "all_daily_completed":
-        today = await app_today(db)
+        if activity_date is None:
+            return False
         result = await db.execute(
             select(ChoreAssignment).where(
                 ChoreAssignment.user_id == user.id,
-                ChoreAssignment.date == today,
+                ChoreAssignment.date == activity_date,
                 ChoreAssignment.is_optional == False,
                 ChoreAssignment.status != AssignmentStatus.skipped,
             )
@@ -128,10 +165,7 @@ async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
         assignments = result.scalars().all()
         if not assignments:
             return False
-        return all(
-            a.status in (AssignmentStatus.completed, AssignmentStatus.verified)
-            for a in assignments
-        )
+        return all(a.status == AssignmentStatus.verified for a in assignments)
 
     elif ctype == "unassigned_chore_completed":
         # This would require tracking if chore was self-claimed

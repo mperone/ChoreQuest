@@ -1,5 +1,8 @@
+import { compareDailyItems } from './choreDayparts.js'
+
 const ACTIONABLE_STATUSES = new Set(['pending', 'assigned'])
 const DONE_STATUSES = new Set(['completed', 'verified', 'skipped', 'missed'])
+const MISSABLE_STATUSES = new Set(['pending', 'assigned'])
 
 export function isActionableStatus(status) {
   return ACTIONABLE_STATUSES.has(status || 'pending')
@@ -10,17 +13,23 @@ export function isDoneStatus(status) {
 }
 
 export function kidBrowseActionForStatus(status) {
-  if (status === 'verified') return 'Done'
-  if (status === 'completed') return 'Waiting for approval'
-  return 'View'
+  return 'View details'
 }
 
-function normalizeKidQuestAssignment(assignment) {
+function effectiveKidAssignmentStatus(status, assignmentDate, today) {
+  if (assignmentDate < today && MISSABLE_STATUSES.has(status || 'pending')) {
+    return 'missed'
+  }
+  return status || 'pending'
+}
+
+function normalizeKidQuestAssignment(assignment, today) {
   const chore = assignment?.chore
   const date = assignment?.date || assignment?.assigned_date || assignment?.due_date
   if (!chore || !date) return null
 
-  const status = assignment.status || 'pending'
+  const rawStatus = assignment.status || 'pending'
+  const status = effectiveKidAssignmentStatus(rawStatus, date, today)
 
   return {
     ...chore,
@@ -29,6 +38,7 @@ function normalizeKidQuestAssignment(assignment) {
     is_optional: !!(assignment.is_optional || chore.is_optional),
     assignment_id: assignment.id,
     assignment_date: date,
+    assignment_raw_status: rawStatus,
     assignment_status: status,
     assignment_user_id: assignment.user_id,
     assignment,
@@ -38,7 +48,7 @@ function normalizeKidQuestAssignment(assignment) {
 function compareByDateThenId(a, b) {
   const dateCompare = a.assignment_date.localeCompare(b.assignment_date)
   if (dateCompare !== 0) return dateCompare
-  return (a.assignment_id || 0) - (b.assignment_id || 0)
+  return compareDailyItems(a, b) || (a.assignment_id || 0) - (b.assignment_id || 0)
 }
 
 function compareToday(a, b) {
@@ -47,17 +57,18 @@ function compareToday(a, b) {
   if (rankA !== rankB) return rankA - rankB
   const optionalCompare = Number(a.is_optional) - Number(b.is_optional)
   if (optionalCompare !== 0) return optionalCompare
-  return compareByDateThenId(a, b)
+  return compareDailyItems(a, b) || compareByDateThenId(a, b)
 }
 
 function compareRecent(a, b) {
-  const rankA = isActionableStatus(a.assignment_status) ? 0 : 1
-  const rankB = isActionableStatus(b.assignment_status) ? 0 : 1
-  if (rankA !== rankB) return rankA - rankB
-
   const dateCompare = b.assignment_date.localeCompare(a.assignment_date)
   if (dateCompare !== 0) return dateCompare
-  return (b.assignment_id || 0) - (a.assignment_id || 0)
+
+  const rankA = a.assignment_status === 'missed' ? 0 : 1
+  const rankB = b.assignment_status === 'missed' ? 0 : 1
+  if (rankA !== rankB) return rankA - rankB
+
+  return compareDailyItems(a, b) || (b.assignment_id || 0) - (a.assignment_id || 0)
 }
 
 export function groupKidQuestAssignments(assignments, today) {
@@ -68,7 +79,7 @@ export function groupKidQuestAssignments(assignments, today) {
   }
 
   for (const assignment of assignments || []) {
-    const item = normalizeKidQuestAssignment(assignment)
+    const item = normalizeKidQuestAssignment(assignment, today)
     if (!item) continue
 
     if (item.assignment_date === today) {

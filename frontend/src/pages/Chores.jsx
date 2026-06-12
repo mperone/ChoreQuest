@@ -36,8 +36,6 @@ import {
   Filter,
   CheckCircle2,
   Clock,
-  Eye,
-  EyeOff,
   Loader2,
   Users,
   ScrollText,
@@ -143,7 +141,7 @@ function kidStatusMeta(item, today) {
   if (item.assignment_date > today) {
     return { label: 'Upcoming', className: 'text-purple border-purple/30 bg-purple/10' };
   }
-  return { label: 'Ready', className: 'text-gold border-gold/30 bg-gold/10' };
+  return { label: 'To do', className: 'text-gold border-gold/30 bg-gold/10' };
 }
 
 function KidAssignmentMeta({ item, today }) {
@@ -190,12 +188,12 @@ export default function Chores() {
 
   const [filterCategory, setFilterCategory] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState('');
-  const [showCompleted, setShowCompleted] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingChore, setEditingChore] = useState(null);
   const [assigningChore, setAssigningChore] = useState(null);
   const [draggedChore, setDraggedChore] = useState(null);
+  const [dragOverTarget, setDragOverTarget] = useState(null);
   const [savingOrder, setSavingOrder] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -292,7 +290,7 @@ export default function Chores() {
     ? filterKidQuestItems(currentChores, {
         category: filterCategory,
         difficulty: filterDifficulty,
-        showCompleted: activeKidTab === 'today' ? showCompleted : true,
+        showCompleted: true,
       })
     : currentChores.filter((chore) => {
         if (filterCategory && chore.category?.name !== filterCategory) return false;
@@ -300,9 +298,6 @@ export default function Chores() {
         return true;
       });
 
-  const completedCount = isKid
-    ? kidQuestGroups.today.filter((item) => isDoneStatus(item.assignment_status)).length
-    : 0;
   const kidTabCounts = {
     today: kidQuestGroups.today.length,
     upcoming: kidQuestGroups.upcoming.length,
@@ -328,14 +323,16 @@ export default function Chores() {
     event.stopPropagation();
     if (savingOrder) return;
     setDraggedChore({ choreId, fromDaypart });
+    setDragOverTarget({ daypart: fromDaypart, index: 0, edge: 'start' });
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', String(choreId));
   };
 
-  const handleDaypartDragOver = (event) => {
+  const handleDaypartDragOver = (event, target = null) => {
     if (!draggedChore || savingOrder) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
+    if (target) setDragOverTarget(target);
   };
 
   const dropChoreIntoDaypart = async (event, toDaypart, toIndex) => {
@@ -351,6 +348,7 @@ export default function Chores() {
     });
 
     setDraggedChore(null);
+    setDragOverTarget(null);
     await saveDaypartOrder(nextGroups);
   };
 
@@ -366,6 +364,11 @@ export default function Chores() {
       : targetIndex;
 
     await dropChoreIntoDaypart(event, toDaypart, adjustedIndex);
+  };
+
+  const handleDaypartDragEnd = () => {
+    setDraggedChore(null);
+    setDragOverTarget(null);
   };
 
   const handleDelete = async () => {
@@ -387,7 +390,6 @@ export default function Chores() {
     if (!isKid) return '';
     if (currentChores.length > 0 && hasActiveFilters) return 'No chores match your filters.';
     if (activeKidTab === 'today') {
-      if (!showCompleted && completedCount > 0) return "All today's chores are complete.";
       return 'No chores due today.';
     }
     if (activeKidTab === 'upcoming') return 'No upcoming chores scheduled.';
@@ -410,15 +412,6 @@ export default function Chores() {
           {isParent ? 'Quest Management' : 'Chores'}
         </h1>
         <div className="flex items-center gap-2">
-          {isKid && activeKidTab === 'today' && completedCount > 0 && (
-            <button
-              onClick={() => setShowCompleted((v) => !v)}
-              className="flex items-center gap-1.5 text-muted hover:text-cream text-sm transition-colors"
-            >
-              {showCompleted ? <EyeOff size={14} /> : <Eye size={14} />}
-              {showCompleted ? 'Hide' : 'Show'} completed ({completedCount})
-            </button>
-          )}
           {isParent && (
             <button
               onClick={() => { setEditingChore(null); setShowCreateModal(true); }}
@@ -436,6 +429,141 @@ export default function Chores() {
         <div className="p-2.5 rounded-md border border-crimson/40 bg-crimson/10 text-crimson text-sm">
           {error}
         </div>
+      )}
+
+      {/* Parent Daypart Ordering */}
+      {isParent && chores.length > 0 && (
+        <section className="game-panel p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-cream text-sm font-semibold">Daily order</h2>
+            {savingOrder && (
+              <span className="inline-flex items-center gap-1 text-xs text-accent">
+                <Loader2 size={12} className="animate-spin" />
+                Saving order...
+              </span>
+            )}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            {DAYPART_ORDER.map((daypart) => {
+              const choreIds = parentOrderGroups[daypart] || [];
+              const isDragOverColumn = dragOverTarget?.daypart === daypart;
+              const columnDropTarget = {
+                daypart,
+                index: choreIds.length,
+                edge: 'end',
+              };
+
+              return (
+                <div
+                  key={daypart}
+                  className={`rounded-md border p-2 min-h-[8rem] transition-colors ${
+                    isDragOverColumn
+                      ? 'border-accent/70 bg-accent/10'
+                      : 'border-border bg-navy-light/40'
+                  }`}
+                  onDragOver={(event) => handleDaypartDragOver(event, columnDropTarget)}
+                  onDrop={(event) => dropChoreIntoDaypart(event, daypart, choreIds.length)}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) {
+                      setDragOverTarget(null);
+                    }
+                  }}
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      {DAYPART_LABELS[daypart]}
+                    </h3>
+                    <span className="rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[11px] text-muted">
+                      {choreIds.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {choreIds.length === 0 && (
+                      <div
+                        className={`flex min-h-20 items-center justify-center rounded-md border border-dashed text-xs transition-colors ${
+                          isDragOverColumn
+                            ? 'border-accent/70 text-accent bg-accent/10'
+                            : 'border-border text-muted/70'
+                        }`}
+                      >
+                        {isDragOverColumn ? 'Drop here' : 'No chores'}
+                      </div>
+                    )}
+
+                    {choreIds.map((choreId, index) => {
+                      const chore = parentChoreById.get(Number(choreId));
+                      if (!chore) return null;
+
+                      const title = themedTitle(chore.title, colorTheme);
+                      const isDraggingThis = Number(draggedChore?.choreId) === Number(choreId);
+                      const showBeforeLine =
+                        dragOverTarget?.daypart === daypart &&
+                        dragOverTarget.index === index &&
+                        dragOverTarget.edge === 'before';
+                      const showAfterLine =
+                        dragOverTarget?.daypart === daypart &&
+                        dragOverTarget.index === index + 1 &&
+                        dragOverTarget.edge === 'after';
+
+                      return (
+                        <div key={choreId} className="relative">
+                          {showBeforeLine && (
+                            <span className="absolute -top-1 left-2 right-2 h-0.5 rounded-full bg-accent shadow-[0_0_8px_rgba(63,213,221,0.7)]" />
+                          )}
+                          <button
+                            key={choreId}
+                            type="button"
+                            draggable={!savingOrder}
+                            aria-disabled={savingOrder}
+                            aria-label={`Move ${chore.title} within daily order`}
+                            title={title}
+                            onClick={(event) => event.stopPropagation()}
+                            onDragStart={(event) => handleDaypartDragStart(event, choreId, daypart)}
+                            onDragOver={(event) => {
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              const insertAfter = event.clientY > rect.top + rect.height / 2;
+                              handleDaypartDragOver(event, {
+                                daypart,
+                                index: insertAfter ? index + 1 : index,
+                                edge: insertAfter ? 'after' : 'before',
+                              });
+                            }}
+                            onDrop={(event) => dropChoreOntoRow(event, daypart, index)}
+                            onDragEnd={handleDaypartDragEnd}
+                            className={`flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left transition-colors ${
+                              isDraggingThis
+                                ? 'border-accent bg-accent/10 opacity-70'
+                                : isDragOverColumn
+                                ? 'border-accent/40 bg-surface-raised'
+                                : 'border-border bg-surface-raised/60 hover:border-accent/50'
+                            } ${savingOrder ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'}`}
+                          >
+                            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border bg-navy text-muted">
+                              <GripVertical size={14} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-cream">
+                                {title}
+                              </span>
+                              <span className="block truncate text-xs text-muted">
+                                {chore.points || 0} XP
+                              </span>
+                            </span>
+                          </button>
+                          {showAfterLine && (
+                            <span className="absolute -bottom-1 left-2 right-2 h-0.5 rounded-full bg-accent shadow-[0_0_8px_rgba(63,213,221,0.7)]" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* Parent Tabs */}
@@ -523,94 +651,6 @@ export default function Chores() {
         </div>
       </div>
 
-      {/* Parent Daypart Ordering */}
-      {isParent && chores.length > 0 && (
-        <section className="game-panel p-3 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-cream text-sm font-semibold">Daily order</h2>
-            {savingOrder && (
-              <span className="inline-flex items-center gap-1 text-xs text-accent">
-                <Loader2 size={12} className="animate-spin" />
-                Saving order...
-              </span>
-            )}
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-4">
-            {DAYPART_ORDER.map((daypart) => {
-              const choreIds = parentOrderGroups[daypart] || [];
-
-              return (
-                <div
-                  key={daypart}
-                  className="rounded-md border border-border bg-navy-light/40 p-2 min-h-[8rem]"
-                  onDragOver={handleDaypartDragOver}
-                  onDrop={(event) => dropChoreIntoDaypart(event, daypart, choreIds.length)}
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      {DAYPART_LABELS[daypart]}
-                    </h3>
-                    <span className="rounded-full border border-border bg-surface-raised px-2 py-0.5 text-[11px] text-muted">
-                      {choreIds.length}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {choreIds.length === 0 && (
-                      <div className="flex min-h-20 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted/70">
-                        No quests
-                      </div>
-                    )}
-
-                    {choreIds.map((choreId, index) => {
-                      const chore = parentChoreById.get(Number(choreId));
-                      if (!chore) return null;
-
-                      const title = themedTitle(chore.title, colorTheme);
-                      const isDraggingThis = Number(draggedChore?.choreId) === Number(choreId);
-
-                      return (
-                        <button
-                          key={choreId}
-                          type="button"
-                          draggable={!savingOrder}
-                          aria-disabled={savingOrder}
-                          aria-label={`Move ${chore.title} within daily order`}
-                          title={title}
-                          onClick={(event) => event.stopPropagation()}
-                          onDragStart={(event) => handleDaypartDragStart(event, choreId, daypart)}
-                          onDragOver={handleDaypartDragOver}
-                          onDrop={(event) => dropChoreOntoRow(event, daypart, index)}
-                          onDragEnd={() => setDraggedChore(null)}
-                          className={`flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left transition-colors ${
-                            isDraggingThis
-                              ? 'border-accent bg-surface-raised opacity-60'
-                              : 'border-border bg-surface-raised/60 hover:border-accent/50'
-                          } ${savingOrder ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'}`}
-                        >
-                          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border bg-navy text-muted">
-                            <GripVertical size={14} />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-cream">
-                              {title}
-                            </span>
-                            <span className="block truncate text-xs text-muted">
-                              {chore.points || 0} XP
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {/* Chore List */}
       {filteredChores.length === 0 ? (
         <div className="game-panel p-8 text-center">
@@ -638,16 +678,12 @@ export default function Chores() {
           {filteredChores.map((chore) => {
             const kidStatus = isKid ? chore.assignment_status : null;
             const isDone = isKid && isDoneStatus(kidStatus);
-            const isPassiveKidBrowseAction =
-              isKid && (kidStatus === 'completed' || kidStatus === 'verified');
             const assignCount = chore.assignment_count || 0;
 
             return (
               <div
                 key={isKid ? `${chore.assignment_id}-${chore.id}` : chore.id}
-                className={`game-panel p-3 flex flex-col gap-2 cursor-pointer hover:border-accent/40 transition-colors ${
-                  isDone ? 'opacity-50' : ''
-                }`}
+                className="game-panel p-3 flex flex-col gap-2 cursor-pointer hover:border-accent/40 transition-colors"
                 onClick={() => {
                   if (isParent && activeTab === 'library' && assignCount === 0) {
                     setAssigningChore(chore);
@@ -774,11 +810,7 @@ export default function Chores() {
                       event.stopPropagation();
                       navigate(`/chores/${chore.id}`);
                     }}
-                    className={`game-btn w-full flex items-center justify-center gap-1.5 !text-xs !py-1.5 ${
-                      isPassiveKidBrowseAction
-                        ? 'bg-surface-raised text-muted border border-border hover:text-cream'
-                        : 'game-btn-blue'
-                    }`}
+                    className="game-btn game-btn-blue w-full flex items-center justify-center gap-1.5 !text-xs !py-1.5"
                   >
                     {kidBrowseActionForStatus(chore.assignment_status)}
                   </button>

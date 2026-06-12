@@ -61,6 +61,25 @@ test('splitQuestAssignments groups today, upcoming, and recent rows', () => {
   assert.deepEqual(groups.recent.map((a) => a.id), [1, 4]);
 });
 
+test('splitQuestAssignments sorts each section by date plus daily chore order', () => {
+  const groups = splitQuestAssignments(
+    [
+      { id: 1, date: '2026-06-10', chore: { title: 'Evening', daypart: 'evening', sort_order: 0 } },
+      { id: 2, date: '2026-06-10', chore: { title: 'Morning second', daypart: 'morning', sort_order: 2 } },
+      { id: 3, date: '2026-06-10', chore: { title: 'Morning first', daypart: 'morning', sort_order: 1 } },
+      { id: 4, date: '2026-06-11', chore: { title: 'Afternoon', daypart: 'afternoon', sort_order: 0 } },
+      { id: 5, date: '2026-06-11', chore: { title: 'Tomorrow morning', daypart: 'morning', sort_order: 0 } },
+      { id: 6, date: '2026-06-09', chore: { title: 'Yesterday evening', daypart: 'evening', sort_order: 0 } },
+      { id: 7, date: '2026-06-09', chore: { title: 'Yesterday morning', daypart: 'morning', sort_order: 0 } },
+    ],
+    '2026-06-10'
+  );
+
+  assert.deepEqual(groups.today.map((a) => a.id), [3, 2, 1]);
+  assert.deepEqual(groups.upcoming.map((a) => a.id), [5, 4]);
+  assert.deepEqual(groups.recent.map((a) => a.id), [7, 6]);
+});
+
 test('collectPendingApprovals gathers completed assignments across calendar days', () => {
   const approvals = collectPendingApprovals({
     '2026-06-09': [

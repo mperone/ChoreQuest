@@ -1,3 +1,5 @@
+import { compareDailyItems } from './choreDayparts.js';
+
 const STATUS_LABELS = {
   pending: 'Scheduled',
   assigned: 'Scheduled',
@@ -37,11 +39,16 @@ export function splitQuestAssignments(assignments, todayISO) {
     }
   }
 
+  today.sort((a, b) => compareDailyItems(a, b) || Number(a.id) - Number(b.id));
   upcoming.sort((a, b) => (
-    String(a.date).localeCompare(String(b.date)) || Number(a.id) - Number(b.id)
+    String(a.date).localeCompare(String(b.date))
+    || compareDailyItems(a, b)
+    || Number(a.id) - Number(b.id)
   ));
   recent.sort((a, b) => (
-    String(b.date).localeCompare(String(a.date)) || Number(b.id) - Number(a.id)
+    String(b.date).localeCompare(String(a.date))
+    || compareDailyItems(a, b)
+    || Number(b.id) - Number(a.id)
   ));
 
   return { today, upcoming, recent };

@@ -48,6 +48,7 @@ const CATEGORY_COLORS = {
   errands: 'bg-gold/20 text-gold border-gold/40',
   default: 'bg-cream/10 text-muted border-border',
 };
+const ASSIGNMENT_PREVIEW_LIMIT = 5;
 
 function DifficultyStars({ level }) {
   const num = typeof level === 'string' ? (DIFFICULTY_LEVEL[level] || 1) : (level || 1);
@@ -67,7 +68,17 @@ function DifficultyStars({ level }) {
   );
 }
 
-function StatusBadge({ status }) {
+function assignmentDisplayStatus(assignment, today) {
+  const status = assignment?.status || 'pending';
+  if ((status === 'pending' || status === 'assigned') && assignment?.date < today) {
+    return assignment?.is_optional
+      ? { status: 'missed', label: 'Bonus missed' }
+      : { status: 'missed', label: 'Missed' };
+  }
+  return { status, label: assignmentStatusLabel(status) };
+}
+
+function StatusBadge({ status, label }) {
   const styles = {
     pending: 'bg-gold/20 text-gold border-gold/40',
     assigned: 'bg-gold/20 text-gold border-gold/40',
@@ -82,7 +93,7 @@ function StatusBadge({ status }) {
         styles[status] || styles.pending
       }`}
     >
-      {assignmentStatusLabel(status)}
+      {label || assignmentStatusLabel(status)}
     </span>
   );
 }
@@ -110,6 +121,38 @@ function assignmentPersonName(assignment) {
   return assignment?.user?.display_name || assignment?.user?.username || `Kid #${assignment?.user_id}`;
 }
 
+function groupAssignmentsByDate(rows) {
+  const groups = new Map();
+  for (const assignment of rows || []) {
+    const key = assignment.date || 'No date';
+    if (!groups.has(key)) {
+      groups.set(key, { date: key, rows: [] });
+    }
+    groups.get(key).rows.push(assignment);
+  }
+  return Array.from(groups.values());
+}
+
+function assignmentPreviewNote(title, isParent) {
+  const lowerTitle = title.toLowerCase();
+
+  if (lowerTitle.includes('upcoming')) {
+    return isParent
+      ? `Showing next ${ASSIGNMENT_PREVIEW_LIMIT} scheduled dates.`
+      : `Showing next ${ASSIGNMENT_PREVIEW_LIMIT} scheduled chores.`;
+  }
+
+  if (lowerTitle.includes('recent')) {
+    return isParent
+      ? `Showing latest ${ASSIGNMENT_PREVIEW_LIMIT} history dates.`
+      : `Showing latest ${ASSIGNMENT_PREVIEW_LIMIT} history items.`;
+  }
+
+  return isParent
+    ? `Showing first ${ASSIGNMENT_PREVIEW_LIMIT} dates.`
+    : `Showing first ${ASSIGNMENT_PREVIEW_LIMIT} chores.`;
+}
+
 export default function ChoreDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -135,7 +178,7 @@ export default function ChoreDetail() {
       const data = await api(`/api/chores/${id}`);
       setChore(data);
     } catch (err) {
-      setError(err.message || 'This quest scroll could not be found.');
+      setError(err.message || 'This chore could not be found.');
     } finally {
       setLoading(false);
     }
@@ -147,7 +190,7 @@ export default function ChoreDetail() {
       const data = await api(`/api/chores/${id}/assignments?past_days=30&future_days=60`);
       setAssignments(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError(err.message || 'Could not load quest assignments.');
+      setError(err.message || 'Could not load chore assignments.');
       setAssignments([]);
     } finally {
       setAssignmentsLoading(false);
@@ -198,10 +241,10 @@ export default function ChoreDetail() {
     setActionMessage('');
     try {
       await api(`/api/chores/${id}/complete`, { method: 'POST' });
-      setActionMessage('Quest submitted for approval.');
+      setActionMessage('Chore marked done for approval.');
       await fetchAssignments();
     } catch (err) {
-      setActionMessage(err.message || 'Failed to complete the quest.');
+      setActionMessage(err.message || 'Failed to mark the chore done.');
     } finally {
       setActionLoading('');
     }
@@ -211,9 +254,9 @@ export default function ChoreDetail() {
     const pathAction = action === 'needsWork' ? 'needs-work' : action;
     const key = `${action}-${assignmentId}`;
     const messages = {
-      approve: 'Quest approved.',
-      needsWork: 'Quest sent back.',
-      skip: 'Quest skipped.',
+      approve: 'Chore approved.',
+      needsWork: 'Chore sent back.',
+      skip: 'Chore skipped.',
     };
     const errors = {
       approve: 'Approval failed.',
@@ -284,24 +327,25 @@ export default function ChoreDetail() {
       })
     : 'Not scheduled';
 
-  const AssignmentRow = ({ assignment, compact = false }) => {
+  const AssignmentRow = ({ assignment, compact = false, framed = true }) => {
     const actions = assignmentActionState(assignment);
     const name = assignmentPersonName(assignment);
     const title = themedTitle(assignment.chore?.title || chore.title, colorTheme);
+    const displayStatus = assignmentDisplayStatus(assignment, today);
     const approveKey = `approve-${assignment.id}`;
     const needsWorkKey = `needsWork-${assignment.id}`;
     const skipKey = `skip-${assignment.id}`;
     const hasActions = isParent && (actions.canApprove || actions.canSendBack || actions.canSkip);
 
     return (
-      <div className="rounded-md border border-border bg-surface-raised/20 p-3 space-y-3">
+      <div className={`${framed ? 'rounded-md border border-border' : 'rounded-md border border-border/50'} bg-surface-raised/20 p-3 space-y-3`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-cream text-sm font-medium break-words" title={title}>
               {isParent ? name : title}
             </p>
             <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted">
-              {isParent && <span>{formatAssignmentDate(assignment.date)}</span>}
+              <span>{formatAssignmentDate(assignment.date)}</span>
               {!isParent && assignment.user_id !== user?.id && <span>{name}</span>}
               {assignment.chore?.points && (
                 <span className="text-gold font-medium">+{assignment.chore.points} XP</span>
@@ -320,7 +364,7 @@ export default function ChoreDetail() {
               )}
             </div>
           </div>
-          <StatusBadge status={assignment.status} />
+          <StatusBadge status={displayStatus.status} label={displayStatus.label} />
         </div>
 
         {assignment.photo_proof_path && (
@@ -390,25 +434,71 @@ export default function ChoreDetail() {
     );
   };
 
-  const AssignmentSection = ({ title, rows, empty }) => (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-cream text-xs font-semibold uppercase tracking-wide">
-          {title}
-        </h3>
-        <span className="text-muted text-xs">{rows.length}</span>
-      </div>
-      {rows.length === 0 ? (
-        <p className="text-muted text-xs py-2">{empty}</p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((assignment) => (
-            <AssignmentRow key={assignment.id} assignment={assignment} compact />
-          ))}
+  const AssignmentSection = ({ title, rows, empty }) => {
+    const parentGroups = isParent ? groupAssignmentsByDate(rows) : [];
+    const visibleParentGroups = parentGroups.slice(0, ASSIGNMENT_PREVIEW_LIMIT);
+    const visibleRows = rows.slice(0, ASSIGNMENT_PREVIEW_LIMIT);
+    const hiddenCount = isParent
+      ? Math.max(0, parentGroups.length - visibleParentGroups.length)
+      : Math.max(0, rows.length - visibleRows.length);
+
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-cream text-xs font-semibold uppercase tracking-wide">
+            {title}
+          </h3>
         </div>
-      )}
-    </div>
-  );
+        {rows.length === 0 ? (
+          <p className="text-muted text-xs py-2">{empty}</p>
+        ) : isParent ? (
+          <div className="space-y-2">
+            {visibleParentGroups.map((group) => (
+              <div
+                key={group.date}
+                className="rounded-md border border-border bg-surface-raised/20 p-3 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-cream text-sm font-semibold">
+                    {formatAssignmentDate(group.date)}
+                  </p>
+                  <span className="text-muted text-xs">
+                    {group.rows.length} {group.rows.length === 1 ? 'kid' : 'kids'}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {group.rows.map((assignment) => (
+                    <AssignmentRow
+                      key={assignment.id}
+                      assignment={assignment}
+                      compact
+                      framed={false}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+            {hiddenCount > 0 && (
+              <p className="text-muted text-xs px-1">
+                {assignmentPreviewNote(title, true)}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {visibleRows.map((assignment) => (
+              <AssignmentRow key={assignment.id} assignment={assignment} compact />
+            ))}
+            {hiddenCount > 0 && (
+              <p className="text-muted text-xs px-1">
+                {assignmentPreviewNote(title, false)}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -475,9 +565,9 @@ export default function ChoreDetail() {
         {chore.requires_photo && (
           <div className="flex items-center gap-2 px-3 py-2 rounded bg-purple/10 border border-purple/30">
             <Camera size={16} className="text-purple" />
-            <span className="text-purple text-xs">
-              Photo proof required
-            </span>
+          <span className="text-purple text-xs">
+            Photo proof required
+          </span>
           </div>
         )}
       </div>
@@ -505,7 +595,7 @@ export default function ChoreDetail() {
         <div className="game-panel p-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <p className="text-cream text-sm font-semibold mb-1">Today's Quest</p>
+              <p className="text-cream text-sm font-semibold mb-1">Today's Chore</p>
               <p className="text-muted text-xs">{formatAssignmentDate(todayAssignment.date)}</p>
             </div>
             <button
@@ -516,7 +606,7 @@ export default function ChoreDetail() {
               }`}
             >
               <CheckCircle2 size={16} />
-              {actionLoading === 'complete' ? 'Submitting...' : 'Complete Quest'}
+              {actionLoading === 'complete' ? 'Submitting...' : 'Mark Done'}
             </button>
           </div>
         </div>
@@ -527,7 +617,7 @@ export default function ChoreDetail() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Settings size={18} className="text-accent" />
-              <h2 className="text-cream text-sm font-semibold">Quest Assignment</h2>
+              <h2 className="text-cream text-sm font-semibold">Chore Assignment</h2>
             </div>
             <button
               type="button"
@@ -601,12 +691,12 @@ export default function ChoreDetail() {
         />
         <AssignmentSection
           title="Upcoming"
-          rows={upcoming.slice(0, 12)}
+          rows={upcoming}
           empty="No upcoming assignments."
         />
         <AssignmentSection
           title="Recent"
-          rows={recent.slice(0, 12)}
+          rows={recent}
           empty="No recent history."
         />
       </div>

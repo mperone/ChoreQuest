@@ -7,6 +7,7 @@ import {
   displayNameForEntry,
   formatPercent,
   scoreForEntry,
+  summarizeTodayBadges,
   summarizeAchievements,
 } from './progressDashboard.js'
 
@@ -43,6 +44,28 @@ test('summarizes unlocked and next achievements', () => {
   assert.equal(summary.unlockedXp, 25)
   assert.deepEqual(summary.recentUnlocked.map((item) => item.title), ['Helper', 'First Quest'])
   assert.deepEqual(summary.nextLocked.map((item) => item.title), ['Streak Starter'])
+})
+
+test('summarizes today badge shelf copy and tooltip text', () => {
+  const summary = summarizeTodayBadges([
+    {
+      title: 'First Steps',
+      description: 'Complete your first chore.',
+      points_reward: 10,
+    },
+    {
+      title: 'All Done!',
+      points_reward: 15,
+    },
+  ])
+
+  assert.equal(summary.count, 2)
+  assert.equal(summary.totalXp, 25)
+  assert.equal(summary.label, '2 badges / +25 XP')
+  assert.deepEqual(summary.items.map((item) => item.tooltip), [
+    'First Steps: Complete your first chore. +10 XP',
+    'All Done! +15 XP',
+  ])
 })
 
 test('finds the best XP day in a progress window', () => {

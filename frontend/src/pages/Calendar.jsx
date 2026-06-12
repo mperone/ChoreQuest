@@ -18,6 +18,7 @@ import {
   groupAssignmentsByKid,
   parentCalendarStatus,
 } from '../utils/parentCalendarGroups';
+import { sortDailyItems } from '../utils/choreDayparts';
 import Modal from '../components/Modal';
 import {
   ChevronLeft,
@@ -437,11 +438,14 @@ export default function Calendar() {
             const dayAssignments = isKid
               ? allDayAssignments.filter((a) => a.user_id === user?.id)
               : allDayAssignments;
+            const sortedDayAssignments = isKid
+              ? sortDailyItems(dayAssignments)
+              : dayAssignments;
             const parentGroups = isKid
               ? []
               : parentCalendarView === 'quest'
-              ? groupAssignmentsByChore(dayAssignments)
-              : groupAssignmentsByKid(dayAssignments);
+              ? groupAssignmentsByChore(sortedDayAssignments)
+              : groupAssignmentsByKid(sortedDayAssignments);
 
             return (
               <div key={dayStr} className="min-w-0">
@@ -463,13 +467,13 @@ export default function Calendar() {
 
                 {/* Assignments */}
                 <div className="space-y-2 mt-2 min-h-[80px]">
-                  {dayAssignments.length === 0 && (
+                  {sortedDayAssignments.length === 0 && (
                     <p className="text-muted text-xs text-center py-4">
                       No quests
                     </p>
                   )}
                   {isKid
-                    ? dayAssignments.map((a) => {
+                    ? sortedDayAssignments.map((a) => {
                         const style = statusStyle(a, dayStr, today);
                         return (
                           <div

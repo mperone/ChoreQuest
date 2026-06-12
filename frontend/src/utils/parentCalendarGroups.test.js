@@ -17,6 +17,8 @@ function assignment({
   status = 'pending',
   date = '2026-06-10',
   isOptional = false,
+  daypart = 'anytime',
+  sortOrder = 0,
 }) {
   return {
     id,
@@ -31,6 +33,8 @@ function assignment({
       points: 10,
       recurrence: 'daily',
       is_optional: isOptional,
+      daypart,
+      sort_order: sortOrder,
     },
     user: {
       id: userId,
@@ -42,9 +46,9 @@ function assignment({
 
 test('groups parent calendar assignments by chore for a day', () => {
   const groups = groupAssignmentsByChore([
-    assignment({ id: 1, choreId: 10, title: 'Make Bed', userId: 2, kid: 'Mia' }),
-    assignment({ id: 2, choreId: 10, title: 'Make Bed', userId: 3, kid: 'Ava', status: 'verified' }),
-    assignment({ id: 3, choreId: 11, title: 'Dishes', userId: 2, kid: 'Mia', status: 'completed' }),
+    assignment({ id: 1, choreId: 10, title: 'Make Bed', userId: 2, kid: 'Mia', daypart: 'morning', sortOrder: 2 }),
+    assignment({ id: 2, choreId: 10, title: 'Make Bed', userId: 3, kid: 'Ava', status: 'verified', daypart: 'morning', sortOrder: 2 }),
+    assignment({ id: 3, choreId: 11, title: 'Dishes', userId: 2, kid: 'Mia', status: 'completed', daypart: 'morning', sortOrder: 1 }),
   ])
 
   assert.deepEqual(groups.map((group) => group.title), ['Dishes', 'Make Bed'])
@@ -61,9 +65,9 @@ test('groups parent calendar assignments by chore for a day', () => {
 
 test('groups parent calendar assignments by kid for a day', () => {
   const groups = groupAssignmentsByKid([
-    assignment({ id: 1, choreId: 10, title: 'Make Bed', userId: 2, kid: 'Mia' }),
-    assignment({ id: 2, choreId: 11, title: 'Dishes', userId: 2, kid: 'Mia', status: 'completed' }),
-    assignment({ id: 3, choreId: 10, title: 'Make Bed', userId: 3, kid: 'Ava', status: 'verified' }),
+    assignment({ id: 1, choreId: 10, title: 'Make Bed', userId: 2, kid: 'Mia', daypart: 'morning', sortOrder: 2 }),
+    assignment({ id: 2, choreId: 11, title: 'Dishes', userId: 2, kid: 'Mia', status: 'completed', daypart: 'morning', sortOrder: 1 }),
+    assignment({ id: 3, choreId: 10, title: 'Make Bed', userId: 3, kid: 'Ava', status: 'verified', daypart: 'morning', sortOrder: 2 }),
   ])
 
   assert.deepEqual(groups.map((group) => group.title), ['Ava', 'Mia'])
@@ -76,6 +80,24 @@ test('groups parent calendar assignments by kid for a day', () => {
   )
   assert.equal(groups[1].doneCount, 1)
   assert.equal(groups[1].totalCount, 2)
+})
+
+test('orders calendar chore groups and kid rows by daypart then manual order', () => {
+  const rows = [
+    assignment({ id: 1, choreId: 20, title: 'Zoo later alphabetically', userId: 2, kid: 'Mia', daypart: 'evening', sortOrder: 0 }),
+    assignment({ id: 2, choreId: 21, title: 'Alpha but afternoon', userId: 2, kid: 'Mia', daypart: 'afternoon', sortOrder: 0 }),
+    assignment({ id: 3, choreId: 22, title: 'Bed second', userId: 2, kid: 'Mia', daypart: 'morning', sortOrder: 2 }),
+    assignment({ id: 4, choreId: 23, title: 'Bed first', userId: 2, kid: 'Mia', daypart: 'morning', sortOrder: 1 }),
+  ]
+
+  assert.deepEqual(
+    groupAssignmentsByChore(rows).map((group) => group.title),
+    ['Bed first', 'Bed second', 'Alpha but afternoon', 'Zoo later alphabetically'],
+  )
+  assert.deepEqual(
+    groupAssignmentsByKid(rows)[0].items.map((item) => item.label),
+    ['Bed first', 'Bed second', 'Alpha but afternoon', 'Zoo later alphabetically'],
+  )
 })
 
 test('labels parent calendar statuses using the assignment date', () => {
