@@ -5,6 +5,7 @@ import {
   DAYPART_ORDER,
   buildChoreReorderPayload,
   currentDaypartForHour,
+  dailyDisplaySectionsForAssignments,
   groupChoresForParentOrdering,
   groupDailyAssignments,
   kidCompletionLabelForAssignment,
@@ -125,6 +126,30 @@ test('uses waiting copy after a kid marks a chore done', () => {
   assert.equal(
     kidCompletionLabelForAssignment(item({ id: 4, title: 'Approved', status: 'verified' })),
     'Done',
+  )
+})
+
+test('keeps completed and verified chores visible on the kid home display', () => {
+  const sections = dailyDisplaySectionsForAssignments(
+    [
+      item({ id: 1, title: 'Ready', daypart: 'morning', sortOrder: 10 }),
+      item({ id: 2, title: 'Waiting', daypart: 'morning', sortOrder: 20, status: 'completed' }),
+      item({ id: 3, title: 'Approved', daypart: 'morning', sortOrder: 30, status: 'verified' }),
+    ],
+    { currentDaypart: 'morning' },
+  )
+
+  assert.deepEqual(sections.map((section) => section.id), ['now'])
+  assert.deepEqual(
+    sections[0].items.map((entry) => [
+      entry.title,
+      kidCompletionLabelForAssignment(entry),
+    ]),
+    [
+      ['Ready', 'Mark Done'],
+      ['Waiting', 'Waiting for approval'],
+      ['Approved', 'Done'],
+    ],
   )
 })
 

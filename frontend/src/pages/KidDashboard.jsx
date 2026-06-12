@@ -21,9 +21,8 @@ import { mondayWeekStart } from '../utils/calendarWeek';
 import { todayISOInTimeZone } from '../utils/daytime';
 import { themedTitle } from '../utils/questThemeText';
 import {
-  DAILY_SECTION_META,
-  DAYPART_ORDER,
   currentDaypartForHour,
+  dailyDisplaySectionsForAssignments,
   groupDailyAssignments,
   kidCompletionLabelForAssignment,
 } from '../utils/choreDayparts';
@@ -83,55 +82,6 @@ function requiresPhotoForAssignment(item) {
 
 function proofKeyFor(item) {
   return item.assignment_id || item.id || item.chore_id;
-}
-
-function normaliseDaypart(value) {
-  return DAYPART_ORDER.includes(value) ? value : 'anytime';
-}
-
-function daypartRank(daypart) {
-  const index = DAYPART_ORDER.indexOf(normaliseDaypart(daypart));
-  return index === -1 ? DAYPART_ORDER.length : index;
-}
-
-function sectionIdForAssignment(item, currentDaypart) {
-  if (isOptionalAssignment(item)) return DAILY_SECTION_META.bonus.id;
-
-  const chore = choreFromAssignment(item);
-  const daypart = normaliseDaypart(chore.daypart);
-  const activeDaypart = normaliseDaypart(currentDaypart);
-
-  if (daypart === activeDaypart) return DAILY_SECTION_META.now.id;
-  if (daypart === 'anytime') return DAILY_SECTION_META.anytime.id;
-  if (daypartRank(daypart) > daypartRank(activeDaypart)) return DAILY_SECTION_META.later.id;
-  return DAILY_SECTION_META.anytime.id;
-}
-
-function displaySectionsForAssignments(dailyGroups, assignments, currentDaypart) {
-  const sections = Object.fromEntries(
-    Object.values(DAILY_SECTION_META).map((meta) => [
-      meta.id,
-      { ...meta, items: [...(dailyGroups.sections?.[meta.id]?.items || [])] },
-    ]),
-  );
-  const includedKeys = new Set(
-    Object.values(sections).flatMap((section) => section.items.map((item) => proofKeyFor(item))),
-  );
-
-  for (const item of assignments || []) {
-    if (assignmentStatus(item) !== 'completed') continue;
-
-    const key = proofKeyFor(item);
-    if (includedKeys.has(key)) continue;
-
-    const sectionId = sectionIdForAssignment(item, currentDaypart);
-    sections[sectionId].items.push(item);
-    includedKeys.add(key);
-  }
-
-  return Object.values(DAILY_SECTION_META)
-    .map((meta) => sections[meta.id])
-    .filter((section) => section.items.length > 0);
 }
 
 function ProofThumbnail({ file }) {
@@ -416,8 +366,8 @@ export default function KidDashboard() {
     groupDailyAssignments(assignments, { currentDaypart })
   ), [assignments, currentDaypart]);
   const displaySections = useMemo(() => (
-    displaySectionsForAssignments(dailyGroups, assignments, currentDaypart)
-  ), [assignments, currentDaypart, dailyGroups]);
+    dailyDisplaySectionsForAssignments(assignments, { currentDaypart })
+  ), [assignments, currentDaypart]);
   const requiredComplete = dailyGroups.requiredTotal > 0 && dailyGroups.requiredLeft === 0;
   const activeTheme = getTheme(boardTheme);
 
@@ -525,6 +475,7 @@ export default function KidDashboard() {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-md border border-gold/25 bg-gold/10 p-3">
+              <p className="text-cream text-xs font-semibold mb-2">Points</p>
               <div className="flex items-center gap-2">
                 <Star size={17} className="text-gold fill-gold" />
                 <span className="text-gold text-xl font-bold tabular-nums">
@@ -535,22 +486,22 @@ export default function KidDashboard() {
             </div>
 
             <div className="rounded-md border border-orange-400/25 bg-orange-400/10 p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-cream text-xs font-semibold">Streak</p>
+                {myStats?.streak_freeze_available && (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-accent/25 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                    <ShieldCheck size={10} />
+                    Save ready
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <Flame size={18} className="text-orange-400 fill-orange-400/20" />
                 <span className="text-orange-400 text-xl font-bold tabular-nums">
                   {user?.current_streak ?? 0}
                 </span>
               </div>
-              <p className="text-muted text-xs mt-1 flex items-center gap-1">
-                {myStats?.streak_freeze_available ? (
-                  <>
-                    <ShieldCheck size={11} className="text-accent" />
-                    Save ready
-                  </>
-                ) : (
-                  'day streak'
-                )}
-              </p>
+              <p className="text-muted text-xs mt-1">day streak</p>
             </div>
           </div>
         </div>

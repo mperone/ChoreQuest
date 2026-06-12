@@ -15,6 +15,7 @@ export const DAILY_SECTION_META = {
 }
 
 const REQUIRED_DONE_STATUSES = new Set(['completed', 'verified'])
+const HOME_VISIBLE_DONE_STATUSES = new Set(['completed', 'verified'])
 
 export function currentDaypartForHour(hour) {
   if (hour < 12) return 'morning'
@@ -52,6 +53,10 @@ function isOptional(item) {
   return Boolean(item.is_optional ?? chore.is_optional)
 }
 
+function assignmentKey(item) {
+  return item.assignment_id || item.id || item.chore_id
+}
+
 function daypartRank(daypart) {
   const index = DAYPART_ORDER.indexOf(normaliseDaypart(daypart))
   return index === -1 ? DAYPART_ORDER.length : index
@@ -67,6 +72,57 @@ function sortDailyItems(items) {
       || String(choreA.title || a.title || '').localeCompare(String(choreB.title || b.title || ''))
     )
   })
+}
+
+function sectionIdForAssignment(item, activeDaypart) {
+  if (isOptional(item)) return DAILY_SECTION_META.bonus.id
+
+  const chore = choreFromAssignment(item)
+  const daypart = normaliseDaypart(chore.daypart)
+
+  if (daypart === activeDaypart) return DAILY_SECTION_META.now.id
+  if (daypart === 'anytime') return DAILY_SECTION_META.anytime.id
+  if (daypartRank(daypart) > daypartRank(activeDaypart)) return DAILY_SECTION_META.later.id
+  return DAILY_SECTION_META.anytime.id
+}
+
+export function dailyDisplaySectionsForAssignments(items, { currentDaypart } = {}) {
+  const activeDaypart = normaliseDaypart(currentDaypart)
+  const dailyGroups = groupDailyAssignments(items, { currentDaypart: activeDaypart })
+  const sections = Object.fromEntries(
+    Object.values(DAILY_SECTION_META).map((meta) => [
+      meta.id,
+      { ...meta, items: [...(dailyGroups.sections?.[meta.id]?.items || [])] },
+    ]),
+  )
+  const includedKeys = new Set(
+    Object.values(sections).flatMap((section) => section.items.map((item) => assignmentKey(item))),
+  )
+  const doneItemsBySection = Object.fromEntries(
+    Object.values(DAILY_SECTION_META).map((meta) => [meta.id, []]),
+  )
+
+  for (const item of items || []) {
+    if (!HOME_VISIBLE_DONE_STATUSES.has(assignmentStatus(item))) continue
+
+    const key = assignmentKey(item)
+    if (includedKeys.has(key)) continue
+
+    const sectionId = sectionIdForAssignment(item, activeDaypart)
+    doneItemsBySection[sectionId].push(item)
+    includedKeys.add(key)
+  }
+
+  for (const section of Object.values(sections)) {
+    section.items = [
+      ...section.items,
+      ...sortDailyItems(doneItemsBySection[section.id] || []),
+    ]
+  }
+
+  return Object.values(DAILY_SECTION_META)
+    .map((meta) => sections[meta.id])
+    .filter((section) => section.items.length > 0)
 }
 
 export function groupDailyAssignments(items, { currentDaypart } = {}) {
