@@ -638,6 +638,8 @@ export default function Chores() {
           {filteredChores.map((chore) => {
             const kidStatus = isKid ? chore.assignment_status : null;
             const isDone = isKid && isDoneStatus(kidStatus);
+            const isPassiveKidBrowseAction =
+              isKid && (kidStatus === 'completed' || kidStatus === 'verified');
             const assignCount = chore.assignment_count || 0;
 
             return (
@@ -772,7 +774,11 @@ export default function Chores() {
                       event.stopPropagation();
                       navigate(`/chores/${chore.id}`);
                     }}
-                    className="game-btn game-btn-blue w-full flex items-center justify-center gap-1.5 !text-xs !py-1.5"
+                    className={`game-btn w-full flex items-center justify-center gap-1.5 !text-xs !py-1.5 ${
+                      isPassiveKidBrowseAction
+                        ? 'bg-surface-raised text-muted border border-border hover:text-cream'
+                        : 'game-btn-blue'
+                    }`}
                   >
                     {kidBrowseActionForStatus(chore.assignment_status)}
                   </button>
