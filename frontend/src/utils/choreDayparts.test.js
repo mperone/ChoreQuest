@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   DAYPART_ORDER,
   buildChoreReorderPayload,
+  currentDaypartForDateInTimeZone,
   currentDaypartForHour,
   dailyDisplaySectionsForAssignments,
   groupChoresForParentOrdering,
@@ -45,6 +46,15 @@ test('maps clock hour to kid daypart', () => {
   assert.equal(currentDaypartForHour(16), 'afternoon')
   assert.equal(currentDaypartForHour(17), 'evening')
   assert.equal(currentDaypartForHour(22), 'evening')
+})
+
+test('maps current daypart using the configured timezone', () => {
+  const noonishUtc = new Date('2026-06-11T16:30:00Z')
+  const eveningUtc = new Date('2026-06-11T22:30:00Z')
+
+  assert.equal(currentDaypartForDateInTimeZone(noonishUtc, 'America/New_York'), 'afternoon')
+  assert.equal(currentDaypartForDateInTimeZone(noonishUtc, 'America/Los_Angeles'), 'morning')
+  assert.equal(currentDaypartForDateInTimeZone(eveningUtc, 'America/Chicago'), 'evening')
 })
 
 test('groups today chores into now, anytime, later, and bonus', () => {

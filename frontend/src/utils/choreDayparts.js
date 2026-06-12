@@ -23,6 +23,25 @@ export function currentDaypartForHour(hour) {
   return 'evening'
 }
 
+export function hourInTimeZone(date, timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date)
+    const hourPart = parts.find((part) => part.type === 'hour')
+    const hour = Number(hourPart?.value)
+    return Number.isFinite(hour) ? hour % 24 : date.getHours()
+  } catch {
+    return date.getHours()
+  }
+}
+
+export function currentDaypartForDateInTimeZone(date, timeZone) {
+  return currentDaypartForHour(hourInTimeZone(date, timeZone))
+}
+
 function normaliseDaypart(value) {
   return DAYPART_ORDER.includes(value) ? value : 'anytime'
 }

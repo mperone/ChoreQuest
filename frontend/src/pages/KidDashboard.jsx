@@ -21,7 +21,7 @@ import { mondayWeekStart } from '../utils/calendarWeek';
 import { todayISOInTimeZone } from '../utils/daytime';
 import { themedTitle } from '../utils/questThemeText';
 import {
-  currentDaypartForHour,
+  currentDaypartForDateInTimeZone,
   dailyDisplaySectionsForAssignments,
   groupDailyAssignments,
   kidCompletionLabelForAssignment,
@@ -299,6 +299,9 @@ export default function KidDashboard() {
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [completingChoreId, setCompletingChoreId] = useState(null);
   const [photoProofFiles, setPhotoProofFiles] = useState({});
+  const [currentDaypart, setCurrentDaypart] = useState(() => (
+    currentDaypartForDateInTimeZone(new Date(), daily_rollover_timezone)
+  ));
   const proofInputRefs = useRef({});
 
   // Board theme — stored in localStorage
@@ -361,7 +364,16 @@ export default function KidDashboard() {
     return () => window.removeEventListener('ws:message', handler);
   }, [fetchData]);
 
-  const currentDaypart = currentDaypartForHour(new Date().getHours());
+  useEffect(() => {
+    const refreshDaypart = () => {
+      setCurrentDaypart(currentDaypartForDateInTimeZone(new Date(), daily_rollover_timezone));
+    };
+
+    refreshDaypart();
+    const intervalId = window.setInterval(refreshDaypart, 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [daily_rollover_timezone]);
+
   const dailyGroups = useMemo(() => (
     groupDailyAssignments(assignments, { currentDaypart })
   ), [assignments, currentDaypart]);
@@ -370,6 +382,8 @@ export default function KidDashboard() {
   ), [assignments, currentDaypart]);
   const requiredComplete = dailyGroups.requiredTotal > 0 && dailyGroups.requiredLeft === 0;
   const activeTheme = getTheme(boardTheme);
+  const pointsBalance = myStats?.points_balance ?? user?.points_balance ?? 0;
+  const currentStreak = myStats?.current_streak ?? user?.current_streak ?? 0;
 
   const setProofInputRef = useCallback((key, node) => {
     if (node) {
@@ -461,6 +475,7 @@ export default function KidDashboard() {
             <button
               type="button"
               onClick={() => setShowThemePicker((v) => !v)}
+              aria-label="Change today look"
               className="flex items-center justify-center w-9 h-9 rounded-md border border-border hover:border-accent hover:bg-accent/10 text-cream transition-all text-base"
               title="Change look"
             >
@@ -479,7 +494,7 @@ export default function KidDashboard() {
               <div className="flex items-center gap-2">
                 <Star size={17} className="text-gold fill-gold" />
                 <span className="text-gold text-xl font-bold tabular-nums">
-                  {(user?.points_balance ?? 0).toLocaleString()}
+                  {pointsBalance.toLocaleString()}
                 </span>
               </div>
               <p className="text-muted text-xs mt-1">ready to spend</p>
@@ -498,7 +513,7 @@ export default function KidDashboard() {
               <div className="flex items-center gap-2">
                 <Flame size={18} className="text-orange-400 fill-orange-400/20" />
                 <span className="text-orange-400 text-xl font-bold tabular-nums">
-                  {user?.current_streak ?? 0}
+                  {currentStreak}
                 </span>
               </div>
               <p className="text-muted text-xs mt-1">day streak</p>
@@ -650,7 +665,9 @@ export default function KidDashboard() {
           <div className="rounded-md border border-border bg-surface-raised/40 p-3 flex items-center gap-3">
             <LockKeyhole size={18} className="text-muted flex-shrink-0" />
             <p className="text-muted text-sm">
-              Finish {dailyGroups.requiredLeft} more to spin.
+              {spin_wheel_enabled
+                ? `Finish ${dailyGroups.requiredLeft} more to spin.`
+                : `Finish ${dailyGroups.requiredLeft} more today.`}
             </p>
           </div>
         ) : spin_wheel_enabled ? (
