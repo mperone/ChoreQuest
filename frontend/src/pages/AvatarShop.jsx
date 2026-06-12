@@ -45,10 +45,10 @@ const CATEGORY_LABELS = {
   accessory: 'Gear',
   face_extra: 'Face',
   outfit_pattern: 'Pattern',
-  pet: 'Pets',
 };
 
-const CATEGORY_ORDER = ['hat', 'pet', 'accessory', 'hair', 'eyes', 'mouth', 'face_extra', 'outfit_pattern', 'head'];
+const CATEGORY_ORDER = ['hat', 'accessory', 'hair', 'eyes', 'mouth', 'face_extra', 'outfit_pattern', 'head'];
+const VISIBLE_CATEGORIES = new Set(CATEGORY_ORDER);
 
 function unlockLabel(item) {
   switch (item.unlock_method) {
@@ -125,7 +125,7 @@ export default function AvatarShop() {
   };
 
   // Only show non-default items (things you can actually unlock)
-  const unlockableItems = items.filter((i) => !i.is_default);
+  const unlockableItems = items.filter((i) => !i.is_default && VISIBLE_CATEGORIES.has(i.category));
 
   // Group by category
   const grouped = {};

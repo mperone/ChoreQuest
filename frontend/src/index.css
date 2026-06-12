@@ -389,18 +389,6 @@ h1, h2, h3, h4, h5, h6 {
   96% { transform: scaleY(1); }
 }
 
-@keyframes avatar-pet-bounce {
-  0%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-0.6px); }
-  60% { transform: translateY(-0.6px); }
-}
-
-@keyframes avatar-tail-wag {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(12deg); }
-  75% { transform: rotate(-12deg); }
-}
-
 @keyframes avatar-sparkle {
   0%, 88%, 100% { opacity: 0; }
   92% { opacity: 0.8; }
@@ -425,18 +413,6 @@ h1, h2, h3, h4, h5, h6 {
   animation: avatar-mouth-move 7s ease-in-out infinite;
   animation-delay: var(--avatar-delay, 0s);
   transform-origin: 16px 18px;
-}
-
-.avatar-idle .avatar-pet {
-  animation: avatar-pet-bounce 2s ease-in-out infinite;
-  animation-delay: var(--avatar-delay, 0s);
-}
-
-.avatar-idle .avatar-pet-tail {
-  animation: avatar-tail-wag 0.6s ease-in-out infinite;
-  animation-delay: var(--avatar-delay, 0s);
-  transform-origin: center bottom;
-  transform-box: fill-box;
 }
 
 .avatar-idle .avatar-sparkle {
@@ -478,74 +454,4 @@ h1, h2, h3, h4, h5, h6 {
 }
 .quest-board-enchanted .game-panel:hover {
   border-color: rgba(236, 72, 153, 0.35);
-}
-
-/* Pet Level Visual Effects */
-@keyframes pet-shimmer-rotate {
-  0% { stroke-dashoffset: 20; }
-  100% { stroke-dashoffset: 0; }
-}
-
-.pet-shimmer {
-  stroke-dasharray: 2 3;
-  animation: pet-shimmer-rotate 3s linear infinite;
-}
-
-/* Pet Interaction Animations */
-.pet-interaction-stage {
-  position: relative;
-  display: inline-block;
-  transition: transform 0.2s ease;
-}
-
-@keyframes pet-action-feed-anim {
-  0%   { transform: translateY(0) scale(1); }
-  15%  { transform: translateY(4px) scale(1.05, 0.92); }
-  30%  { transform: translateY(4px) scale(0.95, 1.08); }
-  45%  { transform: translateY(4px) scale(1.05, 0.92); }
-  60%  { transform: translateY(-6px) scale(0.96, 1.06); }
-  75%  { transform: translateY(-2px) scale(1); }
-  100% { transform: translateY(0) scale(1); }
-}
-
-.pet-action-feed {
-  animation: pet-action-feed-anim 0.8s ease-in-out;
-}
-
-@keyframes pet-action-play-anim {
-  0%   { transform: rotate(0deg) scale(1); }
-  25%  { transform: rotate(90deg) scale(0.9) translateY(-8px); }
-  50%  { transform: rotate(180deg) scale(0.85) translateY(-12px); }
-  75%  { transform: rotate(270deg) scale(0.9) translateY(-8px); }
-  100% { transform: rotate(360deg) scale(1) translateY(0); }
-}
-
-.pet-action-play {
-  animation: pet-action-play-anim 0.7s ease-in-out;
-}
-
-@keyframes pet-action-pet-anim {
-  0%, 100% { transform: rotate(0deg) translateX(0); }
-  10%  { transform: rotate(-8deg) translateX(-2px); }
-  20%  { transform: rotate(8deg) translateX(2px); }
-  30%  { transform: rotate(-8deg) translateX(-2px); }
-  40%  { transform: rotate(8deg) translateX(2px); }
-  50%  { transform: rotate(-6deg) translateX(-1px); }
-  60%  { transform: rotate(6deg) translateX(1px); }
-  70%  { transform: rotate(-4deg) translateX(-1px); }
-  80%  { transform: rotate(4deg) translateX(1px); }
-  90%  { transform: rotate(-2deg); }
-}
-
-.pet-action-pet {
-  animation: pet-action-pet-anim 0.9s ease-in-out;
-}
-
-@keyframes pet-place-pulse {
-  0%, 100% { r: 1.5; opacity: 0.6; }
-  50% { r: 2.2; opacity: 1; }
-}
-
-.pet-place-indicator {
-  animation: pet-place-pulse 1.5s ease-in-out infinite;
 }

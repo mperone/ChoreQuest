@@ -4,8 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 import AvatarDisplay from './AvatarDisplay';
-import { renderPet, renderPetExtras, buildPetColors } from './avatar/pets';
-import { Save, Loader2, ChevronLeft, ChevronRight, Lock, Heart, Star, Crosshair, ArrowLeft } from 'lucide-react';
+import { Save, Loader2, ChevronLeft, ChevronRight, Lock, ArrowLeft } from 'lucide-react';
 
 const HEAD_OPTIONS = [
   { id: 'round', label: 'Round' },
@@ -128,33 +127,6 @@ const OUTFIT_PATTERN_OPTIONS = [
   { id: 'plaid', label: 'Plaid' },
 ];
 
-const PET_OPTIONS = [
-  { id: 'none', label: 'None' },
-  { id: 'cat', label: 'Cat' },
-  { id: 'dog', label: 'Dog' },
-  { id: 'dragon', label: 'Dragon' },
-  { id: 'owl', label: 'Owl' },
-  { id: 'bunny', label: 'Bunny' },
-  { id: 'phoenix', label: 'Phoenix' },
-];
-
-const PET_POSITION_OPTIONS = [
-  { id: 'right', label: 'Right' },
-  { id: 'left', label: 'Left' },
-  { id: 'head', label: 'Head' },
-  { id: 'custom', label: 'Custom' },
-];
-
-const PET_ACCESSORY_OPTIONS = [
-  { id: 'none', label: 'None' },
-  { id: 'crown', label: 'Crown' },
-  { id: 'party_hat', label: 'Party Hat' },
-  { id: 'bow', label: 'Bow' },
-  { id: 'bandana', label: 'Bandana' },
-  { id: 'halo', label: 'Halo' },
-  { id: 'flower', label: 'Flower' },
-];
-
 const SKIN_COLORS = [
   '#ffe0bd', '#ffcc99', '#f5d6b8', '#f8d9c0',
   '#e8b88a', '#d4a373', '#c68642', '#a67c52',
@@ -202,12 +174,6 @@ const ACCESSORY_COLORS = [
   '#8b4513', '#1a1a2e', '#ecf0f1', '#06b6d4',
 ];
 
-const PET_COLORS = [
-  '#8b4513', '#4a3728', '#f39c12', '#ef4444',
-  '#10b981', '#a855f7', '#ecf0f1', '#1a1a2e',
-  '#c0c0c0', '#ff6b9d', '#06b6d4', '#f59e0b',
-];
-
 const AVATAR_CONFIG_VERSION = 2;
 
 const DEFAULT_CONFIG = {
@@ -230,16 +196,6 @@ const DEFAULT_CONFIG = {
   accessory_color: '#3b82f6',
   face_extra: 'none',
   outfit_pattern: 'none',
-  pet: 'none',
-  pet_color: '#8b4513',
-  pet_color_body: '',
-  pet_color_ears: '',
-  pet_color_tail: '',
-  pet_color_accent: '',
-  pet_position: 'right',
-  pet_x: 26,
-  pet_y: 20,
-  pet_accessory: 'none',
 };
 
 const CATEGORIES = [
@@ -255,7 +211,6 @@ const CATEGORIES = [
   { id: 'hat', label: 'Hat' },
   { id: 'face', label: 'Face' },
   { id: 'accessory', label: 'Gear' },
-  { id: 'pet', label: 'Pet' },
 ];
 
 function ColorSwatch({ colors, selected, onSelect }) {
@@ -339,248 +294,6 @@ function MultiShapeSelector({ options, selected, onToggle, lockedItems, configKe
           </button>
         );
       })}
-    </div>
-  );
-}
-
-// ── Pet level thresholds (mirror backend) ──
-const PET_LEVEL_THRESHOLDS = [0, 50, 150, 350, 700, 1200, 2000, 3500];
-const PET_LEVEL_NAMES = ['', 'Hatchling', 'Youngling', 'Companion', 'Loyal', 'Brave', 'Mighty', 'Majestic', 'Legendary'];
-const PET_LEVEL_COLORS = ['', '#94a3b8', '#10b981', '#3b82f6', '#a855f7', '#f59e0b', '#f97316', '#ef4444', '#d946ef'];
-
-function getPetLevelInfo(petXp) {
-  let level = 1;
-  for (let i = 0; i < PET_LEVEL_THRESHOLDS.length; i++) {
-    if (petXp >= PET_LEVEL_THRESHOLDS[i]) level = i + 1;
-  }
-  const threshold = PET_LEVEL_THRESHOLDS[level - 1] || 0;
-  const nextThreshold = PET_LEVEL_THRESHOLDS[level] || null;
-  const progress = nextThreshold ? (petXp - threshold) / (nextThreshold - threshold) : 1;
-  return { level, name: PET_LEVEL_NAMES[level], nextName: PET_LEVEL_NAMES[level + 1] || null, xp: petXp, threshold, nextThreshold, progress };
-}
-
-/** Inline SVG preview of a single pet at larger scale */
-function PetPreviewSvg({ petType, colors, level = 1 }) {
-  if (!petType || petType === 'none') return null;
-  const sc = 1 + (level - 1) * 0.04;
-  // Pet center in avatar coords after PET_OFFSETS.right / BIG_PET_OFFSETS.right
-  const isBig = ['dragon', 'phoenix'].includes(petType);
-  const cx = isBig ? 25 : 26;
-  const cy = isBig ? 19 : 20;
-  // Glow from Lv2+ in preview so progression is visible at small size
-  const glowColor = level >= 7 ? '#f59e0b' : level >= 5 ? '#a855f7' : level >= 2 ? '#3b82f6' : null;
-  return (
-    <svg width={48} height={48} viewBox="0 0 12 12" className="rounded-lg" style={{ background: '#111827' }}>
-      <g transform={`translate(6,6) scale(${sc * 1.3}) translate(${-cx},${-cy})`}>
-        {glowColor && <circle cx={cx} cy={cy} r={4} fill={glowColor} opacity={level >= 5 ? 0.25 : 0.18} />}
-        {renderPet(petType, colors, 'right', {})}
-        {renderPetExtras(petType, level, colors, 'right')}
-      </g>
-    </svg>
-  );
-}
-
-/** Tap-to-place overlay for the avatar preview */
-function TapToPlaceOverlay({ config, onPlace }) {
-  const svgRef = useRef(null);
-
-  const handleClick = (e) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 32);
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 32);
-    // Clamp to safe bounds
-    onPlace(Math.max(4, Math.min(28, x)), Math.max(4, Math.min(28, y)));
-  };
-
-  const petX = config.pet_x ?? 26;
-  const petY = config.pet_y ?? 20;
-
-  return (
-    <div className="relative cursor-crosshair" onClick={handleClick}>
-      <div className="avatar-idle rounded-md">
-        <AvatarDisplay config={config} size="xl" />
-      </div>
-      {/* Overlay SVG for crosshair indicator */}
-      <svg
-        ref={svgRef}
-        className="absolute inset-0 w-full h-full rounded-md"
-        viewBox="0 0 32 32"
-        style={{ pointerEvents: 'all' }}
-        onClick={(e) => {
-          e.stopPropagation();
-          const svg = e.currentTarget;
-          const rect = svg.getBoundingClientRect();
-          const x = Math.round(((e.clientX - rect.left) / rect.width) * 32);
-          const y = Math.round(((e.clientY - rect.top) / rect.height) * 32);
-          onPlace(Math.max(4, Math.min(28, x)), Math.max(4, Math.min(28, y)));
-        }}
-      >
-        {/* Crosshair at current pet position */}
-        <circle cx={petX} cy={petY} r="1.5" fill="none" stroke="#3b82f6" strokeWidth="0.4" className="pet-place-indicator" />
-        <line x1={petX - 2} y1={petY} x2={petX + 2} y2={petY} stroke="#3b82f6" strokeWidth="0.3" opacity="0.6" />
-        <line x1={petX} y1={petY - 2} x2={petX} y2={petY + 2} stroke="#3b82f6" strokeWidth="0.3" opacity="0.6" />
-      </svg>
-      <p className="text-center text-accent text-[10px] font-medium mt-1.5 flex items-center justify-center gap-1">
-        <Crosshair size={10} /> Tap to place your pet
-      </p>
-    </div>
-  );
-}
-
-/** Get XP for a specific pet from per-pet map, falling back to legacy */
-function getPetXpForPet(config, petType) {
-  if (!petType || petType === 'none') return 0;
-  const xpMap = config.pet_xp_map || {};
-  if (petType in xpMap) return xpMap[petType];
-  return config.pet_xp || 0;
-}
-
-/** Full pet customisation section */
-function PetCustomiser({ config, set, locked, previewProps, petStats }) {
-  const hasPet = config.pet && config.pet !== 'none';
-  const petXp = getPetXpForPet(config, config.pet);
-  const levelInfo = getPetLevelInfo(petXp);
-  const petColors = buildPetColors(config);
-  const bodyColor = config.pet_color || '#8b4513';
-
-  // Helper to set a part color, clearing empty strings to inherit
-  const setPartColor = (key, val) => {
-    set(key, val === bodyColor ? '' : val);
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Companion picker */}
-      <div>
-        <p className="text-muted text-xs font-medium mb-2">Companion</p>
-        <ShapeSelector options={PET_OPTIONS} selected={config.pet} onSelect={(v) => set('pet', v)} lockedItems={locked} configKey="pet" {...previewProps} />
-      </div>
-
-      {hasPet && (
-        <>
-          {/* ── Pet Level & XP Info ── */}
-          <div className="bg-surface-raised/50 rounded-md p-3 border border-border">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Heart size={14} className="fill-current" style={{ color: PET_LEVEL_COLORS[levelInfo.level] }} />
-                <span className="text-cream text-xs font-bold" style={{ color: PET_LEVEL_COLORS[levelInfo.level] }}>
-                  Lv{levelInfo.level} {levelInfo.name}
-                </span>
-              </div>
-              <span className="text-muted text-[10px] font-medium">
-                {levelInfo.nextThreshold
-                  ? `${petXp} / ${levelInfo.nextThreshold} XP`
-                  : `${petXp} XP — MAX`}
-              </span>
-            </div>
-
-            {/* XP Progress bar */}
-            {levelInfo.nextThreshold && (
-              <div className="mb-2">
-                <div className="h-2 bg-navy rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.round(levelInfo.progress * 100)}%`,
-                      backgroundColor: PET_LEVEL_COLORS[levelInfo.level],
-                    }}
-                  />
-                </div>
-                <p className="text-muted text-[10px] mt-1">
-                  {levelInfo.nextThreshold - petXp} XP to Level {levelInfo.level + 1} ({levelInfo.nextName})
-                </p>
-              </div>
-            )}
-
-            {/* All Level Previews */}
-            <div className="overflow-x-auto -mx-1 px-1 mt-2">
-              <div className="flex gap-2" style={{ minWidth: 'max-content' }}>
-                {PET_LEVEL_NAMES.slice(1).map((name, i) => {
-                  const lv = i + 1;
-                  const isCurrent = lv === levelInfo.level;
-                  const isPast = lv < levelInfo.level;
-                  const isFuture = lv > levelInfo.level;
-                  return (
-                    <div
-                      key={lv}
-                      className={`text-center flex-shrink-0 rounded-lg p-1 ${
-                        isCurrent ? 'bg-accent/10 ring-1 ring-accent/40' : ''
-                      }`}
-                      style={{ opacity: isFuture ? 0.35 : isPast ? 0.55 : 1 }}
-                    >
-                      <p className="text-[9px] font-medium mb-0.5" style={{ color: PET_LEVEL_COLORS[lv] }}>
-                        {isCurrent ? '▸ ' : ''}Lv{lv}
-                      </p>
-                      <PetPreviewSvg petType={config.pet} colors={petColors} level={lv} />
-                      <p className="text-muted text-[8px] mt-0.5">{name}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Position ── */}
-          <div>
-            <p className="text-muted text-xs font-medium mb-2">Position</p>
-            <ShapeSelector options={PET_POSITION_OPTIONS} selected={config.pet_position || 'right'} onSelect={(v) => set('pet_position', v)} />
-          </div>
-
-          {/* ── Multi-part Colouring ── */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-muted text-xs font-medium">Body Colour</p>
-              <button
-                onClick={() => {
-                  set('pet_color_body', '');
-                  set('pet_color_ears', '');
-                  set('pet_color_tail', '');
-                  set('pet_color_accent', '');
-                }}
-                className="text-[10px] text-accent hover:text-accent/80 transition-colors"
-              >
-                Reset all to match
-              </button>
-            </div>
-            <ColorSwatch colors={PET_COLORS} selected={config.pet_color} onSelect={(v) => set('pet_color', v)} />
-          </div>
-
-          <div>
-            <p className="text-muted text-xs font-medium mb-2">Ears</p>
-            <ColorSwatch
-              colors={PET_COLORS}
-              selected={config.pet_color_ears || config.pet_color || '#8b4513'}
-              onSelect={(v) => setPartColor('pet_color_ears', v)}
-            />
-          </div>
-
-          <div>
-            <p className="text-muted text-xs font-medium mb-2">Tail</p>
-            <ColorSwatch
-              colors={PET_COLORS}
-              selected={config.pet_color_tail || config.pet_color || '#8b4513'}
-              onSelect={(v) => setPartColor('pet_color_tail', v)}
-            />
-          </div>
-
-          <div>
-            <p className="text-muted text-xs font-medium mb-2">Accent</p>
-            <ColorSwatch
-              colors={PET_COLORS}
-              selected={config.pet_color_accent || config.pet_color || '#8b4513'}
-              onSelect={(v) => setPartColor('pet_color_accent', v)}
-            />
-          </div>
-
-          {/* Pet Accessories */}
-          <div>
-            <p className="text-muted text-xs font-medium mb-2">Pet Accessory</p>
-            <ShapeSelector options={PET_ACCESSORY_OPTIONS} selected={config.pet_accessory || 'none'} onSelect={(v) => set('pet_accessory', v)} />
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -705,8 +418,6 @@ function CategoryContent({ category, config, set, lockedByCategory, onPreview, o
         </div>
       );
     }
-    case 'pet':
-      return <PetCustomiser config={config} set={set} locked={locked} previewProps={previewProps} />;
     default:
       return null;
   }
@@ -715,7 +426,7 @@ function CategoryContent({ category, config, set, lockedByCategory, onPreview, o
 const EDITOR_TO_ITEM_CATEGORY = {
   head: 'head', hair: 'hair', eyes: 'eyes', mouth: 'mouth',
   hat: 'hat', accessory: 'accessory', face: 'face_extra',
-  pattern: 'outfit_pattern', pet: 'pet',
+  pattern: 'outfit_pattern',
 };
 
 function CategoryStrip({ openCategory, onSelect }) {
@@ -861,13 +572,7 @@ export default function AvatarEditor() {
 
   const set = (key, value) => {
     setConfig((prev) => {
-      const next = { ...prev, [key]: value };
-      // When switching pets, update pet_xp to the new pet's XP from the map
-      if (key === 'pet') {
-        const xpMap = next.pet_xp_map || {};
-        next.pet_xp = (value && value !== 'none' && value in xpMap) ? xpMap[value] : 0;
-      }
-      return next;
+      return { ...prev, [key]: value };
     });
     setMsg('');
   };
@@ -916,19 +621,9 @@ export default function AvatarEditor() {
           </button>
         </div>
         <div className="flex justify-center">
-          {openCategory === 'pet' && config.pet_position === 'custom' && config.pet && config.pet !== 'none' ? (
-            <TapToPlaceOverlay
-              config={displayConfig}
-              onPlace={(x, y) => {
-                setConfig((prev) => ({ ...prev, pet_x: x, pet_y: y }));
-                setMsg('');
-              }}
-            />
-          ) : (
-            <div className={`avatar-idle rounded-md transition-shadow duration-300`}>
-              <AvatarDisplay config={displayConfig} size="xl" />
-            </div>
-          )}
+          <div className={`avatar-idle rounded-md transition-shadow duration-300`}>
+            <AvatarDisplay config={displayConfig} size="xl" />
+          </div>
         </div>
       </div>
 

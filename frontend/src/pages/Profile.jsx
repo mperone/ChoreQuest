@@ -6,7 +6,6 @@ import AvatarDisplay from '../components/AvatarDisplay';
 import { useNavigate } from 'react-router-dom';
 import ChoreIcon from '../components/ChoreIcon';
 import RankBadge from '../components/RankBadge';
-import PetLevelBadge from '../components/PetLevelBadge';
 import ProgressCharts from '../components/ProgressCharts';
 import {
   UserCircle,
@@ -302,12 +301,6 @@ export default function Profile() {
           </span>
           {stats?.rank && <RankBadge rank={stats.rank} size="sm" />}
         </div>
-        {stats?.pet && (
-          <div className="mt-0.5">
-            <PetLevelBadge pet={stats.pet} />
-          </div>
-        )}
-
         {/* Editable display name */}
         <div className="w-full max-w-xs">
           <label className="block text-cream text-sm font-medium mb-1 text-center">
