@@ -45,11 +45,6 @@ DEFAULT_ACHIEVEMENTS = [
     # ── Daily challenges ──
     {"key": "speed_demon", "title": "Speed Demon", "description": "Complete all daily assigned quests before noon", "icon": "timer", "points_reward": 20, "criteria": {"type": "all_daily_before_time", "hour": 12}, "sort_order": 15},
     {"key": "all_done", "title": "All Done!", "description": "Complete every assigned quest in a single day", "icon": "check-check", "points_reward": 15, "criteria": {"type": "all_daily_completed"}, "sort_order": 16},
-    # ── Pet milestones (Bronze/Silver/Gold/Platinum) ──
-    {"key": "pet_youngling", "title": "Growing Bond", "description": "Raise a pet to Level 2 (Youngling)", "icon": "paw-print", "points_reward": 15, "criteria": {"type": "pet_level_reached", "level": 2}, "tier": "bronze", "group_key": "pets", "sort_order": 17},
-    {"key": "pet_loyal", "title": "Loyal Companion", "description": "Raise a pet to Level 4 (Loyal)", "icon": "paw-print", "points_reward": 30, "criteria": {"type": "pet_level_reached", "level": 4}, "tier": "silver", "group_key": "pets", "sort_order": 18},
-    {"key": "pet_mighty", "title": "Mighty Beast", "description": "Raise a pet to Level 6 (Mighty)", "icon": "paw-print", "points_reward": 50, "criteria": {"type": "pet_level_reached", "level": 6}, "tier": "gold", "group_key": "pets", "sort_order": 19},
-    {"key": "pet_legendary", "title": "Legendary Tamer", "description": "Raise a pet to Level 8 (Legendary)", "icon": "paw-print", "points_reward": 100, "criteria": {"type": "pet_level_reached", "level": 8}, "tier": "gold", "group_key": "pets", "sort_order": 20},
 ]
 
 DEFAULT_SETTINGS = {
@@ -173,14 +168,6 @@ DEFAULT_AVATAR_ITEMS = [
     ("outfit_pattern", "camo", "Camo", _U, _S, 30, False),
     ("outfit_pattern", "tie_dye", "Tie Dye", _R, _S, 35, False),
     ("outfit_pattern", "plaid", "Plaid", _U, _S, 25, False),
-    # ── Pets ──
-    ("pet", "none", "None", _C, _F, None, True),
-    ("pet", "cat", "Cat", _R, _S, 80, False),
-    ("pet", "dog", "Dog", _R, _S, 80, False),
-    ("pet", "dragon", "Dragon", _L, _X, 1000, False),
-    ("pet", "owl", "Owl", _R, _K, 14, False),
-    ("pet", "bunny", "Bunny", _R, _S, 60, False),
-    ("pet", "phoenix", "Phoenix", _L, _Q, None, False),
 ]
 # fmt: on
 

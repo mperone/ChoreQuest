@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.database import Base, get_db
 from backend.dependencies import get_current_user, require_parent
+from backend.main import app
 from backend.models import (
     Chore,
     ChoreCategory,
@@ -25,7 +26,7 @@ from backend.schemas import ChoreDaypartReorderRequest
 def route_methods():
     return {
         (route.path, method)
-        for route in router.routes
+        for route in app.routes
         for method in getattr(route, "methods", set())
     }
 
@@ -66,6 +67,11 @@ class ChoreActionRouteTests(unittest.TestCase):
 
         dependency_calls = {dependency.call for dependency in route.dependant.dependencies}
         self.assertIn(require_parent, dependency_calls)
+
+    def test_pet_interaction_route_is_removed(self):
+        routes = route_methods()
+
+        self.assertNotIn(("/api/pets/interact", "POST"), routes)
 
 
 class ChoreDaypartReorderEndpointTests(unittest.IsolatedAsyncioTestCase):

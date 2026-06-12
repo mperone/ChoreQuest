@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, date, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from sqlalchemy import select, and_, case, func, text
+from sqlalchemy import select, and_, case, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1385,17 +1385,6 @@ async def _approve_assignment(
     kid.points_balance += total_awarded
     kid.total_points_earned += total_awarded
 
-    from backend.services.pet_leveling import award_pet_xp_db
-    pet_levelup = await award_pet_xp_db(db, kid, total_awarded)
-    if pet_levelup:
-        db.add(Notification(
-            user_id=kid.id,
-            type=NotificationType.pet_levelup,
-            title="Pet Leveled Up!",
-            message=f"Your pet reached level {pet_levelup['new_level']} — {pet_levelup['name']}!",
-            reference_type="pet",
-        ))
-
     if assignment_completion_advances_streak(assignment):
         if kid.last_streak_date == today:
             pass
@@ -1510,23 +1499,6 @@ async def _mark_assignment_needs_work(
     )
     assigned_user = assigned_user_result.scalar_one()
     assigned_user.points_balance = max(0, assigned_user.points_balance - total_deducted)
-
-    if total_deducted > 0:
-        config = assigned_user.avatar_config or {}
-        if config.get("pet") and config["pet"] != "none":
-            from backend.services.pet_leveling import (
-                get_current_pet_xp, set_current_pet_xp, migrate_pet_xp,
-            )
-            import json as _json
-            config = migrate_pet_xp(config)
-            old_pet_xp = get_current_pet_xp(config)
-            new_pet_xp = max(0, old_pet_xp - total_deducted)
-            set_current_pet_xp(config, new_pet_xp)
-            await db.execute(
-                text("UPDATE users SET avatar_config = :config WHERE id = :uid"),
-                {"config": _json.dumps(config), "uid": assigned_user.id},
-            )
-            assigned_user.avatar_config = config
 
     for tx in transactions:
         await db.delete(tx)

@@ -82,12 +82,6 @@ AVATAR_PARTS = {
         {"id": "stars", "name": "Stars"}, {"id": "camo", "name": "Camo"},
         {"id": "tie_dye", "name": "Tie Dye"}, {"id": "plaid", "name": "Plaid"},
     ],
-    "pet": [
-        {"id": "none", "name": "None"}, {"id": "cat", "name": "Cat"},
-        {"id": "dog", "name": "Dog"}, {"id": "dragon", "name": "Dragon"},
-        {"id": "owl", "name": "Owl"}, {"id": "bunny", "name": "Bunny"},
-        {"id": "phoenix", "name": "Phoenix"},
-    ],
 }
 
 # Curated colour palettes
@@ -131,11 +125,6 @@ AVATAR_COLORS = {
         "#a855f7", "#ec4899", "#c0c0c0", "#f9d71c",
         "#8b4513", "#1a1a2e", "#ecf0f1", "#06b6d4",
     ],
-    "pet_color": [
-        "#8b4513", "#4a3728", "#f39c12", "#ef4444",
-        "#10b981", "#a855f7", "#ecf0f1", "#1a1a2e",
-        "#c0c0c0", "#ff6b9d", "#06b6d4", "#f59e0b",
-    ],
 }
 
 
@@ -159,22 +148,6 @@ async def save_avatar(
 ):
     """Save avatar configuration for the current user."""
     new_config = body.config
-
-    # Preserve server-managed pet XP data — the frontend may send stale values
-    existing = user.avatar_config or {}
-    if "pet_xp_map" in existing:
-        new_config["pet_xp_map"] = existing["pet_xp_map"]
-    if "pet_xp" in existing:
-        new_config.setdefault("pet_xp", existing["pet_xp"])
-
-    # Keep pet_xp in sync with the current pet from pet_xp_map
-    pet = new_config.get("pet")
-    xp_map = new_config.get("pet_xp_map", {})
-    if pet and pet != "none" and pet in xp_map:
-        new_config["pet_xp"] = xp_map[pet]
-    elif pet and pet != "none" and "pet_xp" in existing:
-        # Switching to a pet that has no map entry yet — legacy migration
-        new_config["pet_xp"] = xp_map.get(pet, 0)
 
     user.avatar_config = new_config
     user.updated_at = datetime.now(timezone.utc)

@@ -520,8 +520,3 @@ class StreakFreezeResponse(BaseModel):
     used: bool
     freezes_used_this_month: int
     month: int
-
-
-# Pet Interaction
-class PetInteractionRequest(BaseModel):
-    action: str = Field(pattern=r"^(feed|pet|play)$")

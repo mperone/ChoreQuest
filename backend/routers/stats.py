@@ -23,7 +23,6 @@ from backend.dependencies import get_current_user, require_parent
 from backend.services.assignment_generator import auto_generate_week_assignments
 from backend.services.stats_helpers import completion_rate
 from backend.services.ranks import get_rank
-from backend.services.pet_leveling import get_pet_level
 from backend.services.streaks import gap_preserves_streak
 from backend.services.daytime import app_today
 
@@ -74,28 +73,11 @@ async def get_my_stats(
     )
 
     rank = get_rank(current_user.total_points_earned or 0)
-    config = current_user.avatar_config or {}
-    pet_type = config.get("pet")
-    has_pet = pet_type not in (None, "none")
-    if has_pet:
-        from backend.services.pet_leveling import get_current_pet_xp
-        pet_xp = get_current_pet_xp(config)
-        pet_info = get_pet_level(pet_xp)
-        pet_info["type"] = pet_type
-    else:
-        pet_info = None
 
     # Streak freeze: available once per calendar month
     today = await app_today(db)
     current_month = today.month + today.year * 12
     streak_freeze_available = (current_user.streak_freeze_month or 0) != current_month
-
-    # Pet interaction budget remaining today
-    interactions = config.get("pet_interactions", {})
-    if interactions.get("date") == today.isoformat():
-        interactions_remaining = max(0, 3 - (interactions.get("count", 0)))
-    else:
-        interactions_remaining = 3
 
     effective = await _effective_streak(db, current_user)
 
@@ -107,8 +89,6 @@ async def get_my_stats(
         "achievements_count": achievements_count,
         "completion_rate": rate_30d,
         "rank": rank,
-        "pet": pet_info,
-        "interactions_remaining": interactions_remaining,
         "streak_freeze_available": streak_freeze_available,
     }
 
