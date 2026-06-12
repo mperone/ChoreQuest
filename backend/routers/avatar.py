@@ -16,6 +16,13 @@ from backend.websocket_manager import ws_manager
 
 router = APIRouter(prefix="/api/avatar", tags=["avatar"])
 
+DISALLOWED_AVATAR_ITEM_CATEGORIES = {"pet", "pet_color"}
+
+
+def _active_avatar_item_category_filter():
+    return ~AvatarItem.category.in_(DISALLOWED_AVATAR_ITEM_CATEGORIES)
+
+
 # Avatar parts catalogue — matches the frontend SvgAvatar renderer
 AVATAR_PARTS = {
     "head": [
@@ -168,7 +175,9 @@ async def get_avatar_items(
     Parents and admins get everything unlocked automatically — the
     shop / unlock mechanic is a gamification layer for kids only.
     """
-    items_result = await db.execute(select(AvatarItem))
+    items_result = await db.execute(
+        select(AvatarItem).where(_active_avatar_item_category_filter())
+    )
     all_items = items_result.scalars().all()
 
     is_parent_or_admin = user.role in (UserRole.parent, UserRole.admin)
@@ -225,7 +234,12 @@ async def purchase_avatar_item(
     user: User = Depends(get_current_user),
 ):
     """Purchase an avatar item from the shop using XP points."""
-    item_result = await db.execute(select(AvatarItem).where(AvatarItem.id == item_id))
+    item_result = await db.execute(
+        select(AvatarItem).where(
+            AvatarItem.id == item_id,
+            _active_avatar_item_category_filter(),
+        )
+    )
     item = item_result.scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -298,6 +312,7 @@ async def try_quest_drop(db: AsyncSession, user: User, difficulty: str):
     droppable = await db.execute(
         select(AvatarItem).where(
             AvatarItem.unlock_method == AvatarUnlockMethod.quest_drop,
+            _active_avatar_item_category_filter(),
         )
     )
     candidates = [i for i in droppable.scalars().all() if i.id not in owned_ids]
