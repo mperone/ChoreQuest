@@ -5,6 +5,7 @@ import {
   DAYPART_ORDER,
   buildChoreReorderPayload,
   currentDaypartForHour,
+  groupChoresForParentOrdering,
   groupDailyAssignments,
   moveChoreBetweenDayparts,
 } from './choreDayparts.js'
@@ -202,4 +203,37 @@ test('moves a chore within and across parent daypart groups', () => {
 
   assert.deepEqual(second.morning, [2, 1])
   assert.deepEqual(second.anytime, [4, 3])
+})
+
+test('moves a chore from its current group when captured source is stale', () => {
+  const moved = moveChoreBetweenDayparts(
+    {
+      morning: [1],
+      afternoon: [2, 3],
+      evening: [],
+      anytime: [4],
+    },
+    { choreId: 3, fromDaypart: 'morning', toDaypart: 'anytime', toIndex: 1 },
+  )
+
+  assert.deepEqual(moved.morning, [1])
+  assert.deepEqual(moved.afternoon, [2])
+  assert.deepEqual(moved.anytime, [4, 3])
+
+  const movedIds = DAYPART_ORDER.flatMap((daypart) => moved[daypart])
+  assert.equal(movedIds.filter((id) => id === 3).length, 1)
+})
+
+test('groups parent chores by daypart sorted by sort order then title', () => {
+  const groups = groupChoresForParentOrdering([
+    { id: 1, title: 'Wash cups', daypart: 'morning', sort_order: 20 },
+    { id: 2, title: 'Fold towels', daypart: 'morning', sort_order: 10 },
+    { id: 3, title: 'Dust shelves', daypart: 'morning', sort_order: 10 },
+    { id: 4, title: 'Sweep porch', daypart: 'nonsense', sort_order: 0 },
+    { id: 5, title: 'Set table', daypart: 'evening', sort_order: 0 },
+  ])
+
+  assert.deepEqual(groups.morning.map((chore) => chore.id), [3, 2, 1])
+  assert.deepEqual(groups.evening.map((chore) => chore.id), [5])
+  assert.deepEqual(groups.anytime.map((chore) => chore.id), [4])
 })

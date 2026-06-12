@@ -135,11 +135,12 @@ export function moveChoreBetweenDayparts(groups, move) {
   const next = Object.fromEntries(
     DAYPART_ORDER.map((daypart) => [daypart, [...(groups[daypart] || [])]]),
   )
-  const fromDaypart = normaliseDaypart(move.fromDaypart)
   const toDaypart = normaliseDaypart(move.toDaypart)
   const choreId = Number(move.choreId)
 
-  next[fromDaypart] = next[fromDaypart].filter((id) => Number(id) !== choreId)
+  for (const daypart of DAYPART_ORDER) {
+    next[daypart] = next[daypart].filter((id) => Number(id) !== choreId)
+  }
   const boundedIndex = Math.max(0, Math.min(Number(move.toIndex), next[toDaypart].length))
   next[toDaypart].splice(boundedIndex, 0, choreId)
 
