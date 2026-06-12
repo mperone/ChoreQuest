@@ -25,6 +25,7 @@ from backend.services.stats_helpers import completion_rate
 from backend.services.ranks import get_rank
 from backend.services.streaks import gap_preserves_streak
 from backend.services.daytime import app_today
+from backend.achievements import is_retired_achievement
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -297,7 +298,11 @@ async def get_all_achievements(
 ):
     """List all achievements with unlock status for the current user."""
     result = await db.execute(select(Achievement).order_by(Achievement.sort_order))
-    achievements = result.scalars().all()
+    achievements = [
+        achievement
+        for achievement in result.scalars().all()
+        if not is_retired_achievement(achievement)
+    ]
 
     result = await db.execute(
         select(UserAchievement).where(UserAchievement.user_id == current_user.id)
@@ -401,7 +406,7 @@ async def update_achievement(
         select(Achievement).where(Achievement.id == achievement_id)
     )
     achievement = result.scalar_one_or_none()
-    if not achievement:
+    if not achievement or is_retired_achievement(achievement):
         raise HTTPException(status_code=404, detail="Achievement not found")
 
     achievement.points_reward = data.points_reward
@@ -433,11 +438,15 @@ def _chore_with_category_loader():
 
 async def _count_achievements(db: AsyncSession, user_id: int) -> int:
     result = await db.execute(
-        select(func.count())
-        .select_from(UserAchievement)
+        select(Achievement)
+        .join(UserAchievement, UserAchievement.achievement_id == Achievement.id)
         .where(UserAchievement.user_id == user_id)
     )
-    return result.scalar() or 0
+    return sum(
+        1
+        for achievement in result.scalars().all()
+        if not is_retired_achievement(achievement)
+    )
 
 
 async def _count_today_assignments_by_kid(
@@ -547,7 +556,7 @@ async def get_achievement_badge(
         select(Achievement).where(Achievement.id == achievement_id)
     )
     achievement = result.scalar_one_or_none()
-    if not achievement:
+    if not achievement or is_retired_achievement(achievement):
         raise HTTPException(status_code=404, detail="Achievement not found")
 
     # Check if user has unlocked it

@@ -8,10 +8,30 @@ from backend.models import (
 from backend.websocket_manager import ws_manager
 from backend.services.daytime import app_today
 
+RETIRED_ACHIEVEMENT_KEYS = frozenset({
+    "pet_youngling",
+    "pet_loyal",
+    "pet_mighty",
+    "pet_legendary",
+})
+RETIRED_ACHIEVEMENT_CRITERIA_TYPES = frozenset({"pet_level_reached"})
+
+
+def is_retired_achievement(achievement: Achievement) -> bool:
+    criteria = achievement.criteria or {}
+    return (
+        achievement.key in RETIRED_ACHIEVEMENT_KEYS
+        or criteria.get("type") in RETIRED_ACHIEVEMENT_CRITERIA_TYPES
+    )
+
 
 async def check_achievements(db: AsyncSession, user: User):
     result = await db.execute(select(Achievement))
-    all_achievements = result.scalars().all()
+    all_achievements = [
+        achievement
+        for achievement in result.scalars().all()
+        if not is_retired_achievement(achievement)
+    ]
 
     result = await db.execute(
         select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)
@@ -27,6 +47,9 @@ async def check_achievements(db: AsyncSession, user: User):
 
 async def _check_criteria(db: AsyncSession, user: User, criteria: dict) -> bool:
     ctype = criteria.get("type")
+
+    if ctype in RETIRED_ACHIEVEMENT_CRITERIA_TYPES:
+        return False
 
     if ctype == "total_completions":
         result = await db.execute(
