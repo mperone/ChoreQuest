@@ -9,6 +9,12 @@ export function isDoneStatus(status) {
   return DONE_STATUSES.has(status)
 }
 
+export function kidBrowseActionForStatus(status) {
+  if (status === 'verified') return 'Done'
+  if (status === 'completed') return 'Waiting for approval'
+  return 'View'
+}
+
 function normalizeKidQuestAssignment(assignment) {
   const chore = assignment?.chore
   const date = assignment?.date || assignment?.assigned_date || assignment?.due_date

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
+  kidBrowseActionForStatus,
   filterKidQuestItems,
   groupKidQuestAssignments,
   isDoneStatus,
@@ -109,4 +110,11 @@ test('keeps optional quest metadata and sorts required today quests first', () =
 
   assert.deepEqual(groups.today.map((item) => item.assignment_id), [2, 1])
   assert.equal(groups.today[1].is_optional, true)
+})
+
+test('kid chores browse screen does not expose primary completion actions', () => {
+  assert.equal(kidBrowseActionForStatus('pending'), 'View')
+  assert.equal(kidBrowseActionForStatus('needs_work'), 'View')
+  assert.equal(kidBrowseActionForStatus('completed'), 'Waiting for approval')
+  assert.equal(kidBrowseActionForStatus('verified'), 'Done')
 })

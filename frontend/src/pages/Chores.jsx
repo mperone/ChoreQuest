@@ -8,6 +8,7 @@ import { themedTitle, themedDescription } from '../utils/questThemeText';
 import { formatScheduleSummary } from '../utils/scheduleDays';
 import { todayISOInTimeZone } from '../utils/daytime';
 import {
+  kidBrowseActionForStatus,
   filterKidQuestItems,
   groupKidQuestAssignments,
   isActionableStatus,
@@ -200,9 +201,6 @@ export default function Chores() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [completingId, setCompletingId] = useState(null);
-  const [photoFiles, setPhotoFiles] = useState({});
-
   const fetchChores = useCallback(async () => {
     if (isKid) {
       setChores([]);
@@ -266,28 +264,6 @@ export default function Chores() {
     window.addEventListener('ws:message', handler);
     return () => window.removeEventListener('ws:message', handler);
   }, [fetchChores, fetchAssignments]);
-
-  const handleKidComplete = async (chore) => {
-    const choreId = chore.id;
-    if (chore.requires_photo && !photoFiles[choreId]) return;
-
-    setCompletingId(choreId);
-    try {
-      if (chore.requires_photo && photoFiles[choreId]) {
-        const fd = new FormData();
-        fd.append('file', photoFiles[choreId]);
-        await api(`/api/chores/${choreId}/complete`, { method: 'POST', body: fd });
-      } else {
-        await api(`/api/chores/${choreId}/complete`, { method: 'POST' });
-      }
-      setPhotoFiles((prev) => { const next = { ...prev }; delete next[choreId]; return next; });
-      await fetchAll();
-    } catch (err) {
-      setError(err.message || 'Failed to complete quest');
-    } finally {
-      setCompletingId(null);
-    }
-  };
 
   const libraryChores = chores;
   const activeChores = chores.filter((c) => (c.assignment_count || 0) > 0);
@@ -409,13 +385,13 @@ export default function Chores() {
   const hasActiveFilters = !!filterCategory || !!filterDifficulty;
   const kidEmptyMessage = (() => {
     if (!isKid) return '';
-    if (currentChores.length > 0 && hasActiveFilters) return 'No quests match your filters.';
+    if (currentChores.length > 0 && hasActiveFilters) return 'No chores match your filters.';
     if (activeKidTab === 'today') {
-      if (!showCompleted && completedCount > 0) return "All today's quests are complete.";
-      return 'No quests due today.';
+      if (!showCompleted && completedCount > 0) return "All today's chores are complete.";
+      return 'No chores due today.';
     }
-    if (activeKidTab === 'upcoming') return 'No upcoming quests scheduled.';
-    return 'No recent quest history.';
+    if (activeKidTab === 'upcoming') return 'No upcoming chores scheduled.';
+    return 'No recent chore history.';
   })();
 
   if (loading) {
@@ -431,7 +407,7 @@ export default function Chores() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <h1 className="text-cream text-lg font-semibold">
-          {isParent ? 'Quest Management' : 'My Quests'}
+          {isParent ? 'Quest Management' : 'Chores'}
         </h1>
         <div className="flex items-center gap-2">
           {isKid && activeKidTab === 'today' && completedCount > 0 && (
@@ -662,11 +638,6 @@ export default function Chores() {
           {filteredChores.map((chore) => {
             const kidStatus = isKid ? chore.assignment_status : null;
             const isDone = isKid && isDoneStatus(kidStatus);
-            const isPending = isKid &&
-              activeKidTab === 'today' &&
-              isActionableStatus(kidStatus) &&
-              chore.assignment_date === kidToday;
-            const isCompleting = completingId === chore.id;
             const assignCount = chore.assignment_count || 0;
 
             return (
@@ -793,60 +764,18 @@ export default function Chores() {
                   </button>
                 )}
 
-                {/* Kid: photo upload + complete */}
-                {isPending && (
-                  <div
-                    className="mt-1 space-y-1.5"
-                    onClick={(e) => e.stopPropagation()}
+                {/* Kid: browse detail action */}
+                {isKid && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      navigate(`/chores/${chore.id}`);
+                    }}
+                    className="game-btn game-btn-blue w-full flex items-center justify-center gap-1.5 !text-xs !py-1.5"
                   >
-                    {chore.requires_photo && (
-                      <label className="inline-flex items-center gap-1.5 text-xs text-muted cursor-pointer hover:text-cream transition-colors bg-surface-raised px-2.5 py-1.5 rounded-md border border-border">
-                        <Camera size={12} />
-                        <span>
-                          {photoFiles[chore.id]
-                            ? photoFiles[chore.id].name
-                            : 'Attach proof photo'}
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) =>
-                            setPhotoFiles((prev) => ({
-                              ...prev,
-                              [chore.id]: e.target.files?.[0] || null,
-                            }))
-                          }
-                        />
-                      </label>
-                    )}
-                    <button
-                      onClick={() => handleKidComplete(chore)}
-                      disabled={
-                        isCompleting ||
-                        (chore.requires_photo && !photoFiles[chore.id])
-                      }
-                      className={`game-btn game-btn-blue w-full flex items-center justify-center gap-1.5 ${
-                        isCompleting ? 'opacity-60 cursor-wait' : ''
-                      } ${
-                        chore.requires_photo && !photoFiles[chore.id]
-                          ? 'opacity-40 cursor-not-allowed'
-                          : ''
-                      }`}
-                    >
-                      {isCompleting ? (
-                        <>
-                          <Loader2 size={12} className="animate-spin" />
-                          Completing...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 size={12} />
-                          Complete Quest
-                        </>
-                      )}
-                    </button>
-                  </div>
+                    {kidBrowseActionForStatus(chore.assignment_status)}
+                  </button>
                 )}
               </div>
             );
