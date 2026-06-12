@@ -1,6 +1,6 @@
 /**
- * Themed Quest Board overlays — decorative elements that change the
- * dashboard look based on the selected board theme.
+ * Themed daily-home overlays — decorative elements that change the
+ * dashboard look based on the selected theme.
  */
 
 export const BOARD_THEMES = [
@@ -8,7 +8,7 @@ export const BOARD_THEMES = [
     id: 'default',
     label: 'Classic',
     icon: '\u2694\uFE0F',
-    description: 'The standard quest board',
+    description: 'Classic daily theme',
     headerGradient: null,
     pageGradient: null,
     cardAccent: null,
@@ -142,7 +142,7 @@ export function QuestBoardDecorations({ themeId }) {
 
 export function QuestBoardTitle({ themeId, children }) {
   const titles = {
-    default: 'Quest Board',
+    default: 'My Day',
     halloween: 'Dungeon Quests',
     christmas: 'Workshop Tasks',
     space: 'Mission Control',
@@ -150,5 +150,5 @@ export function QuestBoardTitle({ themeId, children }) {
     enchanted: 'Garden Quests',
   };
 
-  return <>{titles[themeId] || children || 'Quest Board'}</>;
+  return <>{titles[themeId] || children || 'My Day'}</>;
 }

@@ -420,7 +420,7 @@ h1, h2, h3, h4, h5, h6 {
   animation-delay: var(--avatar-delay, 0s);
 }
 
-/* Quest Board Themes — subtle border tints only */
+/* Daily home themes — subtle border tints only */
 .quest-board-halloween .game-panel {
   border-color: rgba(147, 51, 234, 0.2);
 }
