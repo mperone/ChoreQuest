@@ -7,6 +7,7 @@ import {
   currentDaypartForHour,
   groupChoresForParentOrdering,
   groupDailyAssignments,
+  kidCompletionLabelForAssignment,
   moveChoreBetweenDayparts,
 } from './choreDayparts.js'
 
@@ -94,6 +95,37 @@ test('keeps skipped required chores left and actionable', () => {
   assert.equal(groups.requiredDone, 0)
   assert.equal(groups.requiredLeft, 1)
   assert.equal(groups.nextUp.title, 'Try again')
+})
+
+test('uses Mark Done as the kid-facing completion action for every pending chore', () => {
+  assert.equal(
+    kidCompletionLabelForAssignment(item({ id: 1, title: 'No photo' })),
+    'Mark Done',
+  )
+  assert.equal(
+    kidCompletionLabelForAssignment({
+      ...item({ id: 2, title: 'Photo chore' }),
+      chore: {
+        id: 102,
+        title: 'Photo chore',
+        daypart: 'morning',
+        sort_order: 0,
+        requires_photo: true,
+      },
+    }),
+    'Mark Done',
+  )
+})
+
+test('uses waiting copy after a kid marks a chore done', () => {
+  assert.equal(
+    kidCompletionLabelForAssignment(item({ id: 3, title: 'Done', status: 'completed' })),
+    'Waiting for approval',
+  )
+  assert.equal(
+    kidCompletionLabelForAssignment(item({ id: 4, title: 'Approved', status: 'verified' })),
+    'Done',
+  )
 })
 
 test('routes past daypart pending chores to anytime', () => {

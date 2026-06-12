@@ -38,6 +38,15 @@ function isDone(item) {
   return REQUIRED_DONE_STATUSES.has(assignmentStatus(item))
 }
 
+export function kidCompletionLabelForAssignment(item) {
+  const status = assignmentStatus(item)
+  if (status === 'verified') return 'Done'
+  if (status === 'completed') return 'Waiting for approval'
+  if (status === 'needs_work') return 'Try Again'
+  if (status === 'skipped') return 'Skipped'
+  return 'Mark Done'
+}
+
 function isOptional(item) {
   const chore = choreFromAssignment(item)
   return Boolean(item.is_optional ?? chore.is_optional)

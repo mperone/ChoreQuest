@@ -1,21 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Star,
-  Sword,
-  CheckCircle2,
-  CheckCheck,
-  Skull,
-  Camera,
-  Loader2,
   AlertTriangle,
-  ChevronRight,
-  Heart,
-  HandHeart,
-  Gamepad2,
-  ShieldOff,
+  Camera,
+  CheckCircle2,
+  Flame,
+  Gift,
+  ImagePlus,
+  Loader2,
+  LockKeyhole,
+  ShieldCheck,
   Sparkles,
+  Star,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -24,14 +20,23 @@ import { useTheme } from '../hooks/useTheme';
 import { mondayWeekStart } from '../utils/calendarWeek';
 import { todayISOInTimeZone } from '../utils/daytime';
 import { themedTitle } from '../utils/questThemeText';
-import PointCounter from '../components/PointCounter';
-import StreakDisplay from '../components/StreakDisplay';
+import {
+  DAILY_SECTION_META,
+  DAYPART_ORDER,
+  currentDaypartForHour,
+  groupDailyAssignments,
+  kidCompletionLabelForAssignment,
+} from '../utils/choreDayparts';
 import SpinWheel from '../components/SpinWheel';
-import ConfettiAnimation from '../components/ConfettiAnimation';
 import RankBadge from '../components/RankBadge';
-import PetLevelBadge from '../components/PetLevelBadge';
-import { QuestBoardOverlay, QuestBoardPageGlow, QuestBoardParticles, QuestBoardDecorations, QuestBoardTitle, BOARD_THEMES, getTheme } from '../components/QuestBoardTheme';
-import { renderPet, renderPetExtras, renderPetAccessory, buildPetColors } from '../components/avatar';
+import {
+  QuestBoardOverlay,
+  QuestBoardPageGlow,
+  QuestBoardParticles,
+  QuestBoardDecorations,
+  BOARD_THEMES,
+  getTheme,
+} from '../components/QuestBoardTheme';
 
 // ---------- helpers ----------
 
@@ -58,41 +63,293 @@ function difficultyLabel(difficulty) {
   }
 }
 
+function choreFromAssignment(item) {
+  return item?.chore || item || {};
+}
+
+function assignmentStatus(item) {
+  return item?.assignment_status || item?.status || 'pending';
+}
+
+function isOptionalAssignment(item) {
+  const chore = choreFromAssignment(item);
+  return Boolean(item?.is_optional ?? chore.is_optional);
+}
+
+function requiresPhotoForAssignment(item) {
+  const chore = choreFromAssignment(item);
+  return Boolean(item?.requires_photo ?? chore.requires_photo);
+}
+
+function proofKeyFor(item) {
+  return item.assignment_id || item.id || item.chore_id;
+}
+
+function normaliseDaypart(value) {
+  return DAYPART_ORDER.includes(value) ? value : 'anytime';
+}
+
+function daypartRank(daypart) {
+  const index = DAYPART_ORDER.indexOf(normaliseDaypart(daypart));
+  return index === -1 ? DAYPART_ORDER.length : index;
+}
+
+function sectionIdForAssignment(item, currentDaypart) {
+  if (isOptionalAssignment(item)) return DAILY_SECTION_META.bonus.id;
+
+  const chore = choreFromAssignment(item);
+  const daypart = normaliseDaypart(chore.daypart);
+  const activeDaypart = normaliseDaypart(currentDaypart);
+
+  if (daypart === activeDaypart) return DAILY_SECTION_META.now.id;
+  if (daypart === 'anytime') return DAILY_SECTION_META.anytime.id;
+  if (daypartRank(daypart) > daypartRank(activeDaypart)) return DAILY_SECTION_META.later.id;
+  return DAILY_SECTION_META.anytime.id;
+}
+
+function displaySectionsForAssignments(dailyGroups, assignments, currentDaypart) {
+  const sections = Object.fromEntries(
+    Object.values(DAILY_SECTION_META).map((meta) => [
+      meta.id,
+      { ...meta, items: [...(dailyGroups.sections?.[meta.id]?.items || [])] },
+    ]),
+  );
+  const includedKeys = new Set(
+    Object.values(sections).flatMap((section) => section.items.map((item) => proofKeyFor(item))),
+  );
+
+  for (const item of assignments || []) {
+    if (assignmentStatus(item) !== 'completed') continue;
+
+    const key = proofKeyFor(item);
+    if (includedKeys.has(key)) continue;
+
+    const sectionId = sectionIdForAssignment(item, currentDaypart);
+    sections[sectionId].items.push(item);
+    includedKeys.add(key);
+  }
+
+  return Object.values(DAILY_SECTION_META)
+    .map((meta) => sections[meta.id])
+    .filter((section) => section.items.length > 0);
+}
+
+function ProofThumbnail({ file }) {
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  useEffect(() => {
+    if (!file || typeof URL === 'undefined' || !URL.createObjectURL) {
+      setPreviewUrl('');
+      return undefined;
+    }
+
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (previewUrl) {
+    return (
+      <img
+        src={previewUrl}
+        alt=""
+        className="h-9 w-9 rounded-md object-cover border border-border"
+      />
+    );
+  }
+
+  return <CheckCircle2 size={18} className="text-emerald" />;
+}
+
 // ---------- card animation variants ----------
 
 const cardVariants = {
-  hidden: { opacity: 0 },
+  hidden: { opacity: 0, y: 8 },
   visible: (i) => ({
     opacity: 1,
-    transition: { delay: i * 0.04, duration: 0.15 },
+    y: 0,
+    transition: { delay: i * 0.04, duration: 0.16 },
   }),
 };
+
+const ACTIONABLE_STATUSES = new Set(['pending', 'assigned', 'needs_work']);
+
+function DailyChoreCard({
+  item,
+  index,
+  activeTheme,
+  colorTheme,
+  proofFile,
+  isCompleting,
+  onMarkDone,
+  onPhotoSelected,
+  onPickPhoto,
+  setProofInputRef,
+}) {
+  const chore = choreFromAssignment(item);
+  const status = assignmentStatus(item);
+  const actionLabel = kidCompletionLabelForAssignment(item);
+  const isActionable = ACTIONABLE_STATUSES.has(status);
+  const requiresPhoto = requiresPhotoForAssignment(item);
+  const optional = isOptionalAssignment(item);
+  const diff = difficultyLabel(chore.difficulty);
+  const categoryColor = chore.category?.colour || chore.category?.color || '#14b8a6';
+  const points = chore.points ?? item.points ?? 0;
+  const proofKey = proofKeyFor(item);
+  const themedChoreTitle = themedTitle(chore.title || item.title || 'Chore', colorTheme);
+
+  const pickPhoto = () => {
+    onPickPhoto(item);
+  };
+
+  return (
+    <motion.div
+      className="game-panel p-4 transition-all"
+      style={activeTheme.cardAccent ? {
+        borderColor: `${activeTheme.cardAccent}25`,
+        boxShadow: `0 0 12px ${activeTheme.cardAccent}10, inset 0 1px 0 ${activeTheme.cardAccent}08`,
+      } : undefined}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      custom={index}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="mt-0.5 w-1 h-14 rounded-full flex-shrink-0"
+          style={{ backgroundColor: categoryColor }}
+        />
+
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-cream text-sm font-semibold leading-snug">
+                {themedChoreTitle}
+              </h3>
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-gold text-xs font-semibold">
+                  <Star size={12} fill="currentColor" />
+                  {points} XP
+                </span>
+
+                {optional && (
+                  <span className="inline-flex items-center gap-1 text-gold text-xs font-semibold">
+                    <Sparkles size={11} />
+                    Bonus
+                  </span>
+                )}
+
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${diff.color}`}>
+                  {diff.text}
+                </span>
+
+                {chore.category?.name && (
+                  <span className="text-muted text-xs">
+                    {chore.category.name}
+                  </span>
+                )}
+
+                {requiresPhoto && (
+                  <span className="inline-flex items-center gap-1 text-muted text-xs">
+                    <Camera size={10} />
+                    Photo
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {isActionable && requiresPhoto && (
+            <div className="rounded-md border border-border bg-surface-raised/50 p-2.5">
+              <input
+                ref={(node) => setProofInputRef(proofKey, node)}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => onPhotoSelected(item, e.target.files?.[0] || null)}
+              />
+
+              {proofFile ? (
+                <div className="flex items-center gap-2">
+                  <ProofThumbnail file={proofFile} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-emerald text-xs font-semibold">Photo ready</p>
+                    <p className="text-muted text-[11px] truncate" title={proofFile.name}>
+                      {proofFile.name}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={pickPhoto}
+                    className="game-btn game-btn-blue !py-1.5 !px-3 !text-[11px]"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Camera size={16} className="text-gold flex-shrink-0" />
+                  <span className="text-muted text-xs font-medium flex-1">Photo needed</span>
+                  <button
+                    type="button"
+                    onClick={pickPhoto}
+                    className="game-btn game-btn-blue inline-flex items-center gap-1.5 !py-1.5 !px-3 !text-[11px]"
+                  >
+                    <ImagePlus size={12} />
+                    Add Photo
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => isActionable && onMarkDone(item)}
+            disabled={!isActionable || isCompleting}
+            className={`game-btn w-full flex items-center justify-center gap-1.5 ${
+              isActionable ? 'game-btn-blue' : 'bg-surface-raised text-muted border border-border'
+            } ${isCompleting ? 'opacity-60 cursor-wait' : ''}`}
+          >
+            {isCompleting ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                Marking...
+              </>
+            ) : status === 'completed' ? (
+              <>
+                <CheckCircle2 size={13} />
+                {actionLabel}
+              </>
+            ) : (
+              actionLabel
+            )}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 // ---------- component ----------
 
 export default function KidDashboard() {
-  const { user, updateUser } = useAuth();
+  const { user } = useAuth();
   const { daily_rollover_timezone, spin_wheel_enabled } = useSettings();
   const { colorTheme } = useTheme();
-  const navigate = useNavigate();
 
   // data state
   const [assignments, setAssignments] = useState([]);
-  const [chores, setChores] = useState([]);
   const [spinAvailability, setSpinAvailability] = useState(null);
   const [myStats, setMyStats] = useState(null);
 
   // ui state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showConfetti, setShowConfetti] = useState(false);
   const [showThemePicker, setShowThemePicker] = useState(false);
-
-  // Pet interactions
-  const [petInteracting, setPetInteracting] = useState(null);
-  const [petAction, setPetAction] = useState(null); // holds last action for animation
-  const [petMessage, setPetMessage] = useState('');
-  const [interactionsRemaining, setInteractionsRemaining] = useState(3);
+  const [completingChoreId, setCompletingChoreId] = useState(null);
+  const [photoProofFiles, setPhotoProofFiles] = useState({});
+  const proofInputRefs = useRef({});
 
   // Board theme — stored in localStorage
   const [boardTheme, setBoardTheme] = useState(() =>
@@ -113,7 +370,6 @@ export default function KidDashboard() {
       const today = todayISO(daily_rollover_timezone);
 
       const promises = [
-        api('/api/chores'),
         api(`/api/calendar?week_start=${monday}`),
       ];
       if (spin_wheel_enabled) {
@@ -122,18 +378,11 @@ export default function KidDashboard() {
       promises.push(api('/api/stats/me'));
 
       const results = await Promise.all(promises);
-      const choresRes = results[0];
-      const calendarRes = results[1];
-      const spinRes = spin_wheel_enabled ? results[2] : null;
-      const statsRes = results[spin_wheel_enabled ? 3 : 2];
-      if (statsRes) {
-        setMyStats(statsRes);
-        if (statsRes.interactions_remaining != null) {
-          setInteractionsRemaining(statsRes.interactions_remaining);
-        }
-      }
+      const calendarRes = results[0];
+      const spinRes = spin_wheel_enabled ? results[1] : null;
+      const statsRes = results[spin_wheel_enabled ? 2 : 1];
 
-      setChores(choresRes);
+      setMyStats(statsRes);
 
       // Filter calendar assignments to today and this user only
       const allToday = (calendarRes.days && calendarRes.days[today]) || [];
@@ -142,7 +391,7 @@ export default function KidDashboard() {
 
       setSpinAvailability(spinRes);
     } catch (err) {
-      setError(err.message || 'Failed to load quest data');
+      setError(err.message || 'Failed to load today');
     } finally {
       setLoading(false);
     }
@@ -162,32 +411,77 @@ export default function KidDashboard() {
     return () => window.removeEventListener('ws:message', handler);
   }, [fetchData]);
 
+  const currentDaypart = currentDaypartForHour(new Date().getHours());
+  const dailyGroups = useMemo(() => (
+    groupDailyAssignments(assignments, { currentDaypart })
+  ), [assignments, currentDaypart]);
+  const displaySections = useMemo(() => (
+    displaySectionsForAssignments(dailyGroups, assignments, currentDaypart)
+  ), [assignments, currentDaypart, dailyGroups]);
+  const requiredComplete = dailyGroups.requiredTotal > 0 && dailyGroups.requiredLeft === 0;
+  const activeTheme = getTheme(boardTheme);
 
-  // ---- pet interaction ----
-  const handlePetInteraction = async (action) => {
-    setPetInteracting(action);
-    setPetAction(action);
-    setPetMessage('');
+  const setProofInputRef = useCallback((key, node) => {
+    if (node) {
+      proofInputRefs.current[key] = node;
+    } else {
+      delete proofInputRefs.current[key];
+    }
+  }, []);
+
+  const handleHomePhotoSelected = useCallback((item, file) => {
+    const key = proofKeyFor(item);
+    setPhotoProofFiles((prev) => {
+      if (!file) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: file };
+    });
+  }, []);
+
+  const handlePickHomePhoto = useCallback((item) => {
+    const proofKey = proofKeyFor(item);
+    proofInputRefs.current[proofKey]?.click();
+  }, []);
+
+  const handleHomeMarkDone = useCallback(async (item) => {
+    const chore = choreFromAssignment(item);
+    const choreId = chore.id ?? item.chore_id ?? item.id;
+    const proofKey = proofKeyFor(item);
+    const proofFile = photoProofFiles[proofKey];
+
+    if (requiresPhotoForAssignment(item) && !proofFile) {
+      handlePickHomePhoto(item);
+      return;
+    }
+
+    setCompletingChoreId(choreId);
     try {
-      const res = await api('/api/pets/interact', { method: 'POST', body: { action } });
-      setInteractionsRemaining(res.interactions_remaining);
-      const labels = { feed: 'Fed', pet: 'Petted', play: 'Played with' };
-      setPetMessage(`${labels[action]} your pet! +${res.xp_awarded} XP${res.levelup ? ' - LEVEL UP!' : ''}`);
-      if (res.levelup) setShowConfetti(true);
-      // Update points in header immediately
-      if (res.new_balance != null) updateUser({ points_balance: res.new_balance });
+      if (proofFile) {
+        const formData = new FormData();
+        formData.append('file', proofFile);
+        await api(`/api/chores/${choreId}/complete`, { method: 'POST', body: formData });
+      } else {
+        await api(`/api/chores/${choreId}/complete`, { method: 'POST' });
+      }
+
+      setPhotoProofFiles((prev) => {
+        const next = { ...prev };
+        delete next[proofKey];
+        return next;
+      });
+      if (proofInputRefs.current[proofKey]) {
+        proofInputRefs.current[proofKey].value = '';
+      }
       await fetchData();
     } catch (err) {
-      setPetMessage(err.message || 'Could not interact with pet');
+      setError(err.message || 'Could not mark that chore done');
     } finally {
-      setPetInteracting(null);
-      setTimeout(() => { setPetAction(null); setPetMessage(''); }, 4000);
+      setCompletingChoreId(null);
     }
-  };
-
-  const hasPet = !!myStats?.pet;
-  const petType = myStats?.pet?.type || user?.avatar_config?.pet || 'none';
-  const petColors = buildPetColors(user?.avatar_config || {});
+  }, [fetchData, handlePickHomePhoto, photoProofFiles]);
 
   // ---- render ----
 
@@ -199,101 +493,94 @@ export default function KidDashboard() {
     );
   }
 
-  const requiredAssignments = assignments.filter((a) => !a.is_optional);
-  const completedCount = requiredAssignments.filter(a => a.status === 'verified' || a.status === 'completed').length;
-  const totalCount = requiredAssignments.length;
-  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-  const activeTheme = getTheme(boardTheme);
-
   return (
     <div className={`max-w-2xl mx-auto space-y-5 quest-board-${boardTheme}`}>
-      {/* ── Page-level ambient glow ── */}
+      {/* Page-level ambient glow */}
       <QuestBoardPageGlow themeId={boardTheme} />
 
-      {/* ── Confetti overlay ── */}
-      <AnimatePresence>
-        {showConfetti && (
-          <ConfettiAnimation onComplete={() => setShowConfetti(false)} />
-        )}
-      </AnimatePresence>
-
-      {/* ── Header with stats ── */}
+      {/* Header with status cards */}
       <div className="game-panel p-5 relative overflow-hidden">
         <QuestBoardOverlay themeId={boardTheme} />
         <QuestBoardParticles themeId={boardTheme} />
-        <div className="relative z-10">
-        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-          <div className="flex items-center gap-2">
-            <h1 className="text-cream text-lg font-semibold">
-              <QuestBoardTitle themeId={boardTheme}>Quest Board</QuestBoardTitle>
-            </h1>
+        <div className="relative z-10 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-muted text-xs font-medium">Today</p>
+              <h1 className="text-cream text-2xl font-semibold leading-tight">My Day</h1>
+            </div>
             <button
+              type="button"
               onClick={() => setShowThemePicker((v) => !v)}
-              className="flex items-center justify-center w-8 h-8 rounded-lg border border-border hover:border-accent hover:bg-accent/10 text-cream transition-all text-base"
-              title="Change board theme"
+              className="flex items-center justify-center w-9 h-9 rounded-md border border-border hover:border-accent hover:bg-accent/10 text-cream transition-all text-base"
+              title="Change look"
             >
-              {BOARD_THEMES.find((t) => t.id === boardTheme)?.icon || '\u2694\uFE0F'}
+              {BOARD_THEMES.find((t) => t.id === boardTheme)?.icon || '*'}
             </button>
           </div>
-          <div className="flex items-center gap-3">
-            <PointCounter value={user?.points_balance ?? 0} />
-            <StreakDisplay streak={user?.current_streak ?? 0} />
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <QuestBoardDecorations themeId={boardTheme} />
+            {myStats?.rank && <RankBadge rank={myStats.rank} size="sm" />}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-md border border-gold/25 bg-gold/10 p-3">
+              <div className="flex items-center gap-2">
+                <Star size={17} className="text-gold fill-gold" />
+                <span className="text-gold text-xl font-bold tabular-nums">
+                  {(user?.points_balance ?? 0).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-muted text-xs mt-1">ready to spend</p>
+            </div>
+
+            <div className="rounded-md border border-orange-400/25 bg-orange-400/10 p-3">
+              <div className="flex items-center gap-2">
+                <Flame size={18} className="text-orange-400 fill-orange-400/20" />
+                <span className="text-orange-400 text-xl font-bold tabular-nums">
+                  {user?.current_streak ?? 0}
+                </span>
+              </div>
+              <p className="text-muted text-xs mt-1 flex items-center gap-1">
+                {myStats?.streak_freeze_available ? (
+                  <>
+                    <ShieldCheck size={11} className="text-accent" />
+                    Save ready
+                  </>
+                ) : (
+                  'day streak'
+                )}
+              </p>
+            </div>
           </div>
         </div>
-
-        {/* Board theme decorations */}
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <QuestBoardDecorations themeId={boardTheme} />
-          {myStats?.rank && <RankBadge rank={myStats.rank} size="sm" />}
-          {myStats?.pet && <PetLevelBadge pet={myStats.pet} compact />}
-        </div>
-
-        {/* Required quest progress bar */}
-        {totalCount > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-muted text-xs font-medium">Today's Required Quests</span>
-              <span className="text-cream text-xs font-bold">{completedCount}/{totalCount}</span>
-            </div>
-            <div className="xp-bar">
-              <div
-                className="xp-bar-fill"
-                style={{ width: `${progressPct}%`, transition: 'width 0.3s ease' }}
-              />
-            </div>
-          </div>
-        )}
-        </div>{/* close z-10 */}
       </div>
 
-      {/* ── Board Theme Picker ── */}
+      {/* Theme Picker */}
       {showThemePicker && (
         <div className="game-panel p-4">
-          <h3 className="text-cream text-xs font-medium mb-3">Choose Board Theme</h3>
+          <h3 className="text-cream text-xs font-medium mb-3">Choose Today Look</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {BOARD_THEMES.map((t) => (
+            {BOARD_THEMES.map((theme) => (
               <button
-                key={t.id}
-                onClick={() => changeBoardTheme(t.id)}
+                key={theme.id}
+                type="button"
+                onClick={() => changeBoardTheme(theme.id)}
                 className={`flex items-center gap-2 p-3 rounded-md border transition-all text-left ${
-                  boardTheme === t.id
+                  boardTheme === theme.id
                     ? 'border-accent bg-accent/10'
                     : 'border-border/50 bg-surface-raised/30 hover:border-border-light'
                 }`}
               >
-                <span className="text-xl">{t.icon}</span>
-                <div>
-                  <p className="text-cream text-xs font-medium">{t.label}</p>
-                  <p className="text-muted text-[10px]">{t.description}</p>
-                </div>
+                <span className="text-xl">{theme.icon}</span>
+                <span className="text-cream text-xs font-medium">{theme.label}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── Error banner ── */}
+      {/* Error banner */}
       {error && (
         <div className="game-panel p-3 flex items-center gap-2 border-crimson/30 text-crimson text-sm">
           <AlertTriangle size={16} />
@@ -301,276 +588,133 @@ export default function KidDashboard() {
         </div>
       )}
 
-      {/* ── Active Quest cards (pending only) ── */}
-      {(() => {
-        const pendingAssignments = assignments.filter(
-          (a) => a.status === 'pending' || a.status === 'assigned'
-        ).sort((a, b) => Number(a.is_optional) - Number(b.is_optional));
-
-        if (pendingAssignments.length === 0 && !loading) {
-          return (
-            <motion.div
-              className="game-panel p-10 flex flex-col items-center gap-3 text-center"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <Sword size={36} className="text-muted" />
-              <p className="text-muted text-sm">
-                {assignments.length === 0
-                  ? 'No quests for today. Take a break!'
-                  : totalCount === 0
-                  ? 'No required quests today. Bonus quests are optional.'
-                  : 'All required quests complete! Time to spin the wheel!'}
-              </p>
-            </motion.div>
-          );
-        }
-
-        return (
-          <div className="space-y-3">
-            {pendingAssignments.map((assignment, idx) => {
-              const chore = assignment.chore;
-              if (!chore) return null;
-
-              const diff = difficultyLabel(chore.difficulty);
-              const categoryColor = chore.category?.colour || '#14b8a6';
-
-              return (
-                <motion.div
-                  key={assignment.id}
-                  className="game-panel p-4 transition-all cursor-pointer hover:border-accent/40"
-                  style={activeTheme.cardAccent ? {
-                    borderColor: `${activeTheme.cardAccent}25`,
-                    boxShadow: `0 0 12px ${activeTheme.cardAccent}10, inset 0 1px 0 ${activeTheme.cardAccent}08`,
-                  } : undefined}
-                  variants={cardVariants}
-                  initial="hidden"
-                  animate="visible"
-                  custom={idx}
-                  onClick={() => navigate('/chores')}
-                >
-                  <div className="flex items-start gap-3">
-                    {/* Category indicator */}
-                    <div
-                      className="mt-0.5 w-1 h-12 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: categoryColor }}
-                    />
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Title row */}
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <h3 className="text-cream text-sm font-semibold truncate">
-                          {themedTitle(chore.title, colorTheme)}
-                        </h3>
-                        <ChevronRight size={16} className="text-muted flex-shrink-0" />
-                      </div>
-
-                      {/* Meta row */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* XP */}
-                        <span className="inline-flex items-center gap-1 text-gold text-xs font-semibold">
-                          <Star size={12} fill="currentColor" />
-                          {chore.points} XP
-                        </span>
-
-                        {assignment.is_optional && (
-                          <span className="inline-flex items-center gap-1 text-gold text-xs font-semibold">
-                            <Sparkles size={11} />
-                            Bonus
-                          </span>
-                        )}
-
-                        {/* Difficulty */}
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${diff.color}`}>
-                          {diff.text}
-                        </span>
-
-                        {/* Category */}
-                        {chore.category?.name && (
-                          <span className="text-muted text-xs">
-                            {chore.category.name}
-                          </span>
-                        )}
-
-                        {/* Photo indicator */}
-                        {chore.requires_photo && (
-                          <span className="inline-flex items-center gap-1 text-muted text-xs">
-                            <Camera size={10} />
-                            Photo
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
+      {/* Today overview */}
+      <div className="game-panel p-4">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <p className="text-muted text-xs font-medium">Today</p>
+            <h2 className="text-cream text-lg font-semibold">Chores</h2>
           </div>
-        );
-      })()}
-
-      {/* ── Pet Interactions ── */}
-      {hasPet && (() => {
-        const config = user?.avatar_config || {};
-        const petLevel = myStats?.pet?.level || 1;
-        const petLevelName = myStats?.pet?.name || 'Hatchling';
-        const petAccessory = config.pet_accessory;
-        // Level-based scale (matches AvatarDisplay)
-        const sc = 1 + (petLevel - 1) * 0.04;
-        const glowColor = petLevel >= 7 ? '#f59e0b' : petLevel >= 5 ? '#a855f7' : null;
-        // Pet center for 'right' position
-        const px = 26, py = 20;
-
-        return (
-        <div className="game-panel p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-cream text-sm font-semibold flex items-center gap-2">
-              <Heart size={14} className="text-crimson" />
-              Pet Care
-            </h3>
-            <span className="text-muted text-[11px]">
-              {interactionsRemaining} interaction{interactionsRemaining !== 1 ? 's' : ''} left today
+          {requiredComplete && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-emerald/30 bg-emerald/10 px-2 py-1 text-emerald text-xs font-semibold">
+              <CheckCircle2 size={12} />
+              Ready
             </span>
-          </div>
+          )}
+        </div>
 
-          {/* Pet display with idle + interaction animations */}
-          <div className="flex flex-col items-center mb-3 gap-1">
-            <div
-              className={`pet-interaction-stage ${petAction ? `pet-action-${petAction}` : ''}`}
-            >
-              <div className="avatar-idle rounded-full overflow-hidden" style={{ width: 96, height: 96 }}>
-                <svg width={96} height={96} viewBox="19 13 14 14">
-                  <circle cx="26" cy="20" r="6.5" fill="rgba(255,255,255,0.06)" />
-                  {glowColor && (
-                    <circle cx={px} cy={py} r={4} fill={glowColor} opacity="0.15" />
-                  )}
-                  <g className="avatar-pet">
-                    <g transform={sc !== 1 ? `translate(${px},${py}) scale(${sc}) translate(${-px},${-py})` : undefined}>
-                      {renderPet(petType, petColors, 'right')}
-                      {renderPetExtras(petType, petLevel, petColors, 'right')}
-                      {renderPetAccessory(petType, petAccessory, 'right')}
-                    </g>
-                  </g>
-                </svg>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="rounded-md bg-surface-raised/60 border border-border p-3">
+            <p className="text-emerald text-2xl font-bold tabular-nums">
+              {dailyGroups.requiredDone}
+            </p>
+            <p className="text-muted text-xs">done</p>
+          </div>
+          <div className="rounded-md bg-surface-raised/60 border border-border p-3">
+            <p className="text-gold text-2xl font-bold tabular-nums">
+              {dailyGroups.requiredLeft}
+            </p>
+            <p className="text-muted text-xs">left</p>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-border bg-navy/50 p-3">
+          <p className="text-muted text-xs font-medium mb-1">Next up</p>
+          <p className="text-cream text-sm font-semibold">
+            {dailyGroups.nextUp
+              ? themedTitle(choreFromAssignment(dailyGroups.nextUp).title || dailyGroups.nextUp.title, colorTheme)
+              : dailyGroups.requiredTotal === 0
+              ? 'No required chores today'
+              : 'All required chores are done'}
+          </p>
+        </div>
+      </div>
+
+      {/* Daily chore sections */}
+      {displaySections.length > 0 ? (
+        <div className="space-y-5">
+          {displaySections.map((section) => (
+            <section key={section.id} className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <h2 className="text-cream text-sm font-semibold">{section.title}</h2>
+                <span className="text-muted text-xs">
+                  {section.items.length}
+                </span>
               </div>
-              {/* Floating particles during interaction */}
-              <AnimatePresence>
-                {petAction === 'feed' && (
-                  <motion.span
-                    className="absolute -top-1 right-0 text-lg pointer-events-none"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: -8 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.6 }}
-                  >
-                    🍖
-                  </motion.span>
-                )}
-                {petAction === 'pet' && (
-                  <>
-                    {[0, 1, 2].map(i => (
-                      <motion.span
-                        key={i}
-                        className="absolute pointer-events-none text-sm"
-                        style={{ left: `${20 + i * 25}%`, top: '-4px' }}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: [0, 1, 0], y: -16 }}
-                        transition={{ duration: 0.8, delay: i * 0.2 }}
-                      >
-                        💕
-                      </motion.span>
-                    ))}
-                  </>
-                )}
-                {petAction === 'play' && (
-                  <>
-                    {[0, 1].map(i => (
-                      <motion.span
-                        key={i}
-                        className="absolute pointer-events-none text-sm"
-                        style={{ left: `${15 + i * 50}%`, top: '-4px' }}
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: [0, 1, 0], scale: 1.2, y: -12 }}
-                        transition={{ duration: 0.6, delay: i * 0.3 }}
-                      >
-                        ⭐
-                      </motion.span>
-                    ))}
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
-            {/* Pet level label */}
-            <PetLevelBadge pet={myStats?.pet} />
-          </div>
+              <div className="space-y-3">
+                {section.items.map((assignment, idx) => {
+                  const chore = choreFromAssignment(assignment);
+                  const choreId = chore.id ?? assignment.chore_id ?? assignment.id;
+                  const proofKey = proofKeyFor(assignment);
 
-          {/* XP feedback */}
-          <AnimatePresence>
-            {petMessage && (
-              <motion.p
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className={`text-xs mb-3 text-center font-semibold ${
-                  petMessage.includes('Could not') || petMessage.includes('tired') ? 'text-crimson' : 'text-emerald'
-                }`}
-              >
-                {petMessage}
-              </motion.p>
-            )}
-          </AnimatePresence>
-
-          {/* Action buttons */}
-          <div className="flex gap-2">
-            {[
-              { action: 'feed', icon: Heart, label: 'Feed', color: 'game-btn-red' },
-              { action: 'pet', icon: HandHeart, label: 'Pet', color: 'game-btn-blue' },
-              { action: 'play', icon: Gamepad2, label: 'Play', color: 'game-btn-purple' },
-            ].map(({ action, icon: Icon, label, color }) => (
-              <button
-                key={action}
-                onClick={() => handlePetInteraction(action)}
-                disabled={!!petInteracting || interactionsRemaining <= 0}
-                className={`game-btn ${color} flex-1 flex items-center justify-center gap-1.5 !py-2 text-xs ${
-                  petInteracting === action ? 'opacity-60 cursor-wait' : ''
-                } ${interactionsRemaining <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                {petInteracting === action ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Icon size={14} />
-                )}
-                {label}
-              </button>
-            ))}
-          </div>
+                  return (
+                    <DailyChoreCard
+                      key={`${section.id}-${proofKey}`}
+                      item={assignment}
+                      index={idx}
+                      activeTheme={activeTheme}
+                      colorTheme={colorTheme}
+                      proofFile={photoProofFiles[proofKey]}
+                      isCompleting={completingChoreId === choreId}
+                      onMarkDone={handleHomeMarkDone}
+                      onPhotoSelected={handleHomePhotoSelected}
+                      onPickPhoto={handlePickHomePhoto}
+                      setProofInputRef={setProofInputRef}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
-        );
-      })()}
-
-      {/* ── Streak Freeze Indicator ── */}
-      {myStats?.streak_freeze_available && (
-        <div className="game-panel p-3 flex items-center gap-3">
-          <ShieldOff size={16} className="text-accent flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-cream text-xs font-medium">Streak Save Ready</p>
-            <p className="text-muted text-[10px]">One missed required day can be forgiven this month</p>
-          </div>
-        </div>
+      ) : (
+        <motion.div
+          className="game-panel p-10 flex flex-col items-center gap-3 text-center"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Sparkles size={34} className="text-muted" />
+          <p className="text-muted text-sm">
+            {assignments.length === 0
+              ? 'No chores are due today.'
+              : dailyGroups.requiredTotal === 0
+              ? 'No required chores today. Bonus chores are optional.'
+              : 'All required chores are done.'}
+          </p>
+        </motion.div>
       )}
 
-      {/* ── Spin Wheel Section ── */}
-      {spin_wheel_enabled && (
-        <div className="pt-2">
+      {/* Done Today reward panel */}
+      <div className="game-panel p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Gift size={17} className="text-gold" />
+          <h2 className="text-cream text-sm font-semibold">Done Today</h2>
+        </div>
+
+        {dailyGroups.requiredTotal === 0 ? (
+          <div className="rounded-md border border-border bg-surface-raised/40 p-3 text-sm text-muted">
+            No required chores are due today.
+          </div>
+        ) : !requiredComplete ? (
+          <div className="rounded-md border border-border bg-surface-raised/40 p-3 flex items-center gap-3">
+            <LockKeyhole size={18} className="text-muted flex-shrink-0" />
+            <p className="text-muted text-sm">
+              Finish {dailyGroups.requiredLeft} more to spin.
+            </p>
+          </div>
+        ) : spin_wheel_enabled ? (
           <SpinWheel
             availability={spinAvailability}
             onSpinComplete={() => {
               fetchData();
             }}
           />
-        </div>
-      )}
+        ) : (
+          <div className="rounded-md border border-emerald/30 bg-emerald/10 p-3 text-sm text-emerald">
+            All required chores are done today.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
