@@ -15,12 +15,14 @@ from backend.models import (
     ChoreAssignmentRule,
     AssignmentStatus,
     PointTransaction,
+    PointType,
     Achievement,
     UserAchievement,
 )
 from backend.schemas import UserResponse, AchievementResponse, AchievementUpdate
 from backend.dependencies import get_current_user, require_parent
 from backend.services.assignment_generator import auto_generate_week_assignments
+from backend.services.approval_queue import collect_pending_approvals
 from backend.services.stats_helpers import completion_rate
 from backend.services.ranks import get_rank
 from backend.services.streaks import gap_preserves_streak
@@ -155,6 +157,28 @@ async def get_kid_detail(
         for rule in rules_result.scalars().all():
             rule_map[(rule.chore_id, rule.user_id)] = rule
 
+    pending_result = await db.execute(
+        select(ChoreAssignment)
+        .join(Chore, ChoreAssignment.chore_id == Chore.id)
+        .where(
+            ChoreAssignment.user_id == kid_id,
+            ChoreAssignment.status == AssignmentStatus.completed,
+            Chore.is_active == True,
+        )
+        .options(
+            _chore_with_category_loader(),
+        )
+        .order_by(
+            ChoreAssignment.date,
+            ChoreAssignment.completed_at,
+            ChoreAssignment.id,
+        )
+    )
+    pending_approvals = collect_pending_approvals(
+        pending_result.scalars().all(),
+        kid_id=kid_id,
+    )
+
     effective = await _effective_streak(db, kid)
     return {
         "kid": {
@@ -167,6 +191,10 @@ async def get_kid_detail(
         "assignments": [
             _build_kid_assignment(a, rule_map.get((a.chore_id, a.user_id)))
             for a in assignments
+        ],
+        "pending_approvals": [
+            _build_kid_assignment(a, rule_map.get((a.chore_id, a.user_id)))
+            for a in pending_approvals
         ],
     }
 
@@ -217,7 +245,7 @@ async def get_leaderboard(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Weekly leaderboard. Sum positive PointTransactions for the current week."""
+    """Weekly leaderboard. Sum earned XP credited to the current family week."""
     today = await app_today(db)
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
@@ -231,7 +259,12 @@ async def get_leaderboard(
     if not kid_map:
         return []
 
-    # Weekly XP per kid
+    # Weekly XP per kid. earned_date is the family-date credit bucket; created_at
+    # remains the audit timestamp and is only used as a legacy fallback.
+    credit_day = func.coalesce(
+        PointTransaction.earned_date,
+        func.date(PointTransaction.created_at),
+    )
     result = await db.execute(
         select(
             PointTransaction.user_id,
@@ -240,8 +273,9 @@ async def get_leaderboard(
         .where(
             PointTransaction.user_id.in_(list(kid_map.keys())),
             PointTransaction.amount > 0,
-            func.date(PointTransaction.created_at) >= monday,
-            func.date(PointTransaction.created_at) <= sunday,
+            PointTransaction.type != PointType.reward_redeem,
+            credit_day >= monday,
+            credit_day <= sunday,
         )
         .group_by(PointTransaction.user_id)
         .order_by(func.sum(PointTransaction.amount).desc())
@@ -467,6 +501,7 @@ async def _count_today_assignments_by_kid(
             ChoreAssignment.user_id.in_(kid_ids),
             ChoreAssignment.date == today,
             ChoreAssignment.is_optional == False,
+            ChoreAssignment.status != AssignmentStatus.skipped,
             Chore.is_active == True,
         )
         .group_by(ChoreAssignment.user_id)
@@ -505,6 +540,8 @@ def _build_kid_assignment(
     return {
         "id": a.id,
         "chore_id": a.chore_id,
+        "user_id": a.user_id,
+        "date": a.date.isoformat() if hasattr(a.date, "isoformat") else a.date,
         "status": a.status.value,
         "completed_at": a.completed_at.isoformat() if a.completed_at else None,
         "verified_at": a.verified_at.isoformat() if a.verified_at else None,

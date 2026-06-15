@@ -24,6 +24,7 @@ from backend.websocket_manager import ws_manager
 from backend.services.assignment_generator import auto_generate_week_assignments
 from backend.services.calendar_windows import monday_week_start, monday_week_starts_to_generate
 from backend.services.daytime import app_today
+from backend.services.assignment_state import is_one_off_assignment_rule
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -520,12 +521,29 @@ async def remove_assignment(
             await _add_exclusion_if_new(db, assignment.chore_id, assignment.user_id, assignment.date)
         await db.delete(assignment)
 
+    await _deactivate_one_off_rule_for_removed_assignment(db, assignment)
+
     await db.commit()
     await ws_manager.broadcast(
         {"type": "data_changed", "data": {"entity": "assignment"}},
         exclude_user=parent.id,
     )
     return None
+
+
+async def _deactivate_one_off_rule_for_removed_assignment(
+    db: AsyncSession,
+    assignment: ChoreAssignment,
+) -> None:
+    result = await db.execute(
+        select(ChoreAssignmentRule).where(
+            ChoreAssignmentRule.chore_id == assignment.chore_id,
+            ChoreAssignmentRule.user_id == assignment.user_id,
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if rule and is_one_off_assignment_rule(rule):
+        rule.is_active = False
 
 
 async def _load_existing_exclusions(

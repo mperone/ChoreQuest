@@ -1,6 +1,7 @@
 """Shared optional-quest policy helpers."""
 
 COMPLETED_STATUSES = {"completed", "verified"}
+EXCUSED_STATUSES = {"skipped"}
 
 
 def _value(value):
@@ -12,7 +13,8 @@ def assignment_is_optional(assignment) -> bool:
 
 
 def assignment_counts_for_required_progress(assignment) -> bool:
-    return not assignment_is_optional(assignment)
+    status = _value(getattr(assignment, "status", None))
+    return not assignment_is_optional(assignment) and status not in EXCUSED_STATUSES
 
 
 def assignment_completion_advances_streak(assignment) -> bool:

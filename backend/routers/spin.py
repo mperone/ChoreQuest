@@ -74,6 +74,7 @@ async def _can_spin_today(db: AsyncSession, user: User) -> tuple[bool, int | Non
             ChoreAssignment.user_id == user.id,
             ChoreAssignment.date == today,
             ChoreAssignment.is_optional == False,
+            ChoreAssignment.status != AssignmentStatus.skipped,
         )
     )
     today_assignments = result.scalars().all()
@@ -141,6 +142,7 @@ async def execute_spin(
         description=f"Daily spin: won {points_won} XP",
         reference_id=None,
         created_by=None,
+        earned_date=today,
     )
     db.add(transaction)
 
@@ -153,7 +155,7 @@ async def execute_spin(
 
     # Check achievements (non-blocking on failure)
     try:
-        await check_achievements(db, user)
+        await check_achievements(db, user, activity_date=today)
     except Exception:
         pass
 

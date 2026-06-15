@@ -361,6 +361,21 @@ def _drop_quest_templates(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS quest_templates")
 
 
+def _migrate_point_transactions_earned_date_v1(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(
+        conn, "point_transactions", "earned_date", "DATE",
+    )
+    if _table_exists(conn, "point_transactions"):
+        conn.execute(
+            """
+            UPDATE point_transactions
+            SET earned_date = date(created_at)
+            WHERE earned_date IS NULL
+              AND created_at IS NOT NULL
+            """
+        )
+
+
 MIGRATIONS = [
     Migration(
         id="2026_06_10_existing_lightweight_columns",
@@ -391,5 +406,10 @@ MIGRATIONS = [
         id="2026_06_11_chore_daypart_order_v1",
         description="Add chore daypart and parent-managed sort order",
         migrate=_migrate_chore_daypart_order_v1,
+    ),
+    Migration(
+        id="2026_06_15_point_transactions_earned_date_v1",
+        description="Add earned date for family-date XP reporting",
+        migrate=_migrate_point_transactions_earned_date_v1,
     ),
 ]

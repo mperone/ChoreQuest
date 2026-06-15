@@ -110,7 +110,16 @@ export default function KidQuests() {
   if (!data) return null;
 
   const { kid, assignments } = data;
-  const requiredAssignments = assignments.filter((a) => !a.is_optional);
+  const todayAssignments = Array.isArray(assignments) ? assignments : [];
+  const pendingApprovals = Array.isArray(data.pending_approvals)
+    ? data.pending_approvals
+    : [];
+  const pendingApprovalIds = new Set(pendingApprovals.map((a) => a.id));
+  const displayAssignments = [
+    ...pendingApprovals,
+    ...todayAssignments.filter((a) => !pendingApprovalIds.has(a.id)),
+  ];
+  const requiredAssignments = todayAssignments.filter((a) => !a.is_optional);
   const completedCount = requiredAssignments.filter(
     (a) => a.status === 'completed' || a.status === 'verified'
   ).length;
@@ -159,7 +168,7 @@ export default function KidQuests() {
       )}
 
       {/* Quest list */}
-      {assignments.length === 0 ? (
+      {displayAssignments.length === 0 ? (
         <div className="game-panel p-10 text-center">
           <Swords size={40} className="mx-auto text-muted mb-4" />
           <p className="text-muted text-sm">
@@ -168,10 +177,9 @@ export default function KidQuests() {
         </div>
       ) : (
         <div className="space-y-2.5">
-          {assignments.map((a, idx) => {
+          {displayAssignments.map((a, idx) => {
             const cfg = STATUS_CONFIG[a.status] || STATUS_CONFIG.pending;
             const StatusIcon = cfg.icon;
-            const isCompleted = a.status === 'completed';
             const isVerified = a.status === 'verified';
             const actions = assignmentActionState(a);
             const approveKey = `approve-${a.id}`;
@@ -179,11 +187,12 @@ export default function KidQuests() {
             const isApproving = actionLoading[approveKey];
             const isSendingBack = actionLoading[needsWorkKey];
             const isBusy = isApproving || isSendingBack;
+            const hasParentActions = actions.canApprove || actions.canSendBack;
 
             return (
               <div
                 key={a.id}
-                className={`game-panel p-3 sm:p-4 ${isVerified ? 'opacity-50' : ''}`}
+                className="game-panel p-3 sm:p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div
@@ -222,6 +231,11 @@ export default function KidQuests() {
                           {a.chore.category}
                         </span>
                       )}
+                      {a.date && (
+                        <span className="text-muted text-xs">
+                          {a.date}
+                        </span>
+                      )}
                       <span className={`flex items-center gap-1 text-xs font-medium ${cfg.color}`}>
                         <StatusIcon size={12} />
                         {cfg.label}
@@ -230,37 +244,41 @@ export default function KidQuests() {
                   </div>
 
                   {/* Parent approval buttons */}
-                  {isCompleted && (
+                  {hasParentActions && (
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        className="game-btn game-btn-blue !px-3 !py-2"
-                        disabled={isBusy || !actions.canApprove}
-                        onClick={() => handleApprove(a.id)}
-                        title="Approve"
-                      >
-                        {isApproving ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <CheckCircle2 size={16} />
-                        )}
-                      </button>
-                      <button
-                        className="game-btn game-btn-red !px-3 !py-2"
-                        disabled={isBusy || !actions.canSendBack}
-                        onClick={() => handleNeedsWork(a.id)}
-                        title="Needs work"
-                      >
-                        {isSendingBack ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <XCircle size={16} />
-                        )}
-                      </button>
+                      {actions.canApprove && (
+                        <button
+                          className="game-btn game-btn-blue !px-3 !py-2"
+                          disabled={isBusy}
+                          onClick={() => handleApprove(a.id)}
+                          title="Approve"
+                        >
+                          {isApproving ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <CheckCircle2 size={16} />
+                          )}
+                        </button>
+                      )}
+                      {actions.canSendBack && (
+                        <button
+                          className="game-btn game-btn-red !px-3 !py-2"
+                          disabled={isBusy}
+                          onClick={() => handleNeedsWork(a.id)}
+                          title="Needs work"
+                        >
+                          {isSendingBack ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <XCircle size={16} />
+                          )}
+                        </button>
+                      )}
                     </div>
                   )}
 
                   {/* Verified checkmark */}
-                  {isVerified && (
+                  {isVerified && !hasParentActions && (
                     <CheckCircle2 size={20} className="text-emerald flex-shrink-0" />
                   )}
                 </div>

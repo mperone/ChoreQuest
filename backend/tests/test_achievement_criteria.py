@@ -215,6 +215,52 @@ class AchievementCriteriaTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual({"early_bird"}, await self._unlocked_keys(db, kid.id))
 
+    async def test_streak_achievement_requires_verified_streak_credit(self):
+        async with self.Session() as db:
+            parent = User(
+                username="parent",
+                display_name="Parent",
+                password_hash="hash",
+                role=UserRole.parent,
+            )
+            kid = self._kid()
+            kid.current_streak = 7
+            kid.last_streak_date = date(2026, 6, 7)
+            category = self._category()
+            db.add_all([parent, kid, category])
+            await db.flush()
+
+            chore = self._chore(parent.id, category.id, "Make bed")
+            achievement = self._achievement(
+                "on_fire",
+                {"type": "streak_reached", "days": 7},
+            )
+            db.add_all([chore, achievement])
+            await db.flush()
+
+            db.add_all([
+                ChoreAssignment(
+                    chore_id=chore.id,
+                    user_id=kid.id,
+                    date=date(2026, 6, day),
+                    status=AssignmentStatus.completed,
+                    completed_at=datetime(2026, 6, day, 13, 0),
+                )
+                for day in range(1, 8)
+            ])
+            await db.commit()
+
+            await check_achievements(db, kid, activity_date=date(2026, 6, 7))
+            self.assertEqual(set(), await self._unlocked_keys(db, kid.id))
+
+            result = await db.execute(select(ChoreAssignment))
+            for assignment in result.scalars().all():
+                assignment.status = AssignmentStatus.verified
+            await db.commit()
+
+            await check_achievements(db, kid, activity_date=date(2026, 6, 7))
+            self.assertEqual({"on_fire"}, await self._unlocked_keys(db, kid.id))
+
 
 if __name__ == "__main__":
     unittest.main()

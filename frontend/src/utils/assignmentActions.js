@@ -14,7 +14,7 @@ export function assignmentActionState(assignment) {
   const status = assignment?.status || 'pending';
   return {
     canApprove: status === 'completed',
-    canSendBack: status === 'completed',
+    canSendBack: status === 'completed' || status === 'verified',
     canSkip: status === 'pending' || status === 'assigned',
   };
 }

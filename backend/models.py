@@ -311,6 +311,7 @@ class PointTransaction(Base):
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     reference_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    earned_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", foreign_keys=[user_id])

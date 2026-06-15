@@ -22,6 +22,7 @@ from backend.schemas import (
 )
 from backend.dependencies import get_current_user, require_parent, require_admin
 from backend.achievements import check_achievements
+from backend.services.daytime import app_today
 from backend.websocket_manager import ws_manager
 
 router = APIRouter(prefix="/api/points", tags=["points"])
@@ -80,6 +81,8 @@ async def award_bonus(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    today = await app_today(db)
+
     # Update the user's balance
     user.points_balance += body.amount
     user.total_points_earned += body.amount
@@ -91,6 +94,7 @@ async def award_bonus(
         type=PointType.bonus,
         description=body.description,
         created_by=current_user.id,
+        earned_date=today,
     )
     db.add(tx)
 
@@ -108,7 +112,7 @@ async def award_bonus(
     await db.refresh(tx)
 
     # Check achievements after bonus
-    await check_achievements(db, user)
+    await check_achievements(db, user, activity_date=today)
 
     # WebSocket notification
     await ws_manager.send_to_user(user.id, {
@@ -140,6 +144,8 @@ async def adjust_points(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    today = await app_today(db)
+
     # Prevent balance from going negative
     if user.points_balance + body.amount < 0:
         raise HTTPException(
@@ -159,6 +165,7 @@ async def adjust_points(
         type=PointType.adjustment,
         description=body.description,
         created_by=current_user.id,
+        earned_date=today,
     )
     db.add(tx)
 

@@ -29,6 +29,7 @@ async def count_assignments(
             ChoreAssignment.user_id == user_id,
             ChoreAssignment.date >= since,
             ChoreAssignment.is_optional == False,
+            ChoreAssignment.status != AssignmentStatus.skipped,
         )
     )
     if completed_only:

@@ -48,6 +48,11 @@ class OptionalQuestPolicyTests(unittest.TestCase):
     def test_pending_required_assignment_does_not_advance_streak(self):
         self.assertFalse(assignment_completion_advances_streak(assignment()))
 
+    def test_skipped_required_assignments_do_not_count_for_required_progress(self):
+        self.assertFalse(
+            assignment_counts_for_required_progress(assignment(status="skipped"))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

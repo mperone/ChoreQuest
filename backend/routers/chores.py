@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, date, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from sqlalchemy import select, and_, case, func
+from sqlalchemy import select, and_, case, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -50,8 +50,19 @@ from backend.services.calendar_windows import monday_week_start, monday_week_sta
 from backend.services.recurrence import should_create_on_day
 from backend.services.rotation import get_rotation_kid_for_day
 from backend.services.assignment_cleanup import pending_assignment_is_stale
+from backend.services.approval_queue import collect_pending_approvals
+from backend.services.assignment_state import (
+    assignment_status_blocks_chore_delete,
+    event_credit_timestamp,
+    is_one_off_assignment_rule,
+    one_off_assignment_keeps_rule_active,
+    one_off_rule_is_exhausted,
+    point_totals_after_credit_reversal,
+    should_preserve_on_assignment_save,
+    streak_credit_date,
+)
 from backend.services.optional_quests import assignment_completion_advances_streak
-from backend.services.streaks import gap_preserves_streak
+from backend.services.streaks import calculate_user_streak, recompute_user_streak
 from backend.services.daytime import app_today
 
 logger = logging.getLogger(__name__)
@@ -82,6 +93,65 @@ def _normalize_weekdays(weekdays: list[int] | None) -> list[int]:
     if not weekdays:
         return []
     return sorted({day for day in weekdays if isinstance(day, int) and 0 <= day <= 6})
+
+
+async def _retire_exhausted_one_off_rules(
+    db: AsyncSession,
+    today: date,
+) -> tuple[int, int]:
+    """Deactivate one-time rules whose only date has passed.
+
+    Completed assignments are intentionally left alone because they still need
+    parent approval regardless of the calendar date.
+    """
+    rules_result = await db.execute(
+        select(ChoreAssignmentRule).where(
+            ChoreAssignmentRule.is_active == True,
+            or_(
+                ChoreAssignmentRule.schedule_type == ScheduleType.once,
+                and_(
+                    ChoreAssignmentRule.schedule_type.is_(None),
+                    ChoreAssignmentRule.recurrence == Recurrence.once,
+                ),
+            ),
+        )
+    )
+    retired_rules = 0
+    removed_pending = 0
+
+    for rule in rules_result.scalars().all():
+        completed_result = await db.execute(
+            select(func.count())
+            .select_from(ChoreAssignment)
+            .where(
+                ChoreAssignment.chore_id == rule.chore_id,
+                ChoreAssignment.user_id == rule.user_id,
+                ChoreAssignment.status == AssignmentStatus.completed,
+            )
+        )
+        has_completed_assignment = (completed_result.scalar() or 0) > 0
+        if not one_off_rule_is_exhausted(
+            rule,
+            today=today,
+            has_completed_assignment=has_completed_assignment,
+        ):
+            continue
+
+        pending_result = await db.execute(
+            select(ChoreAssignment).where(
+                ChoreAssignment.chore_id == rule.chore_id,
+                ChoreAssignment.user_id == rule.user_id,
+                ChoreAssignment.status == AssignmentStatus.pending,
+            )
+        )
+        for assignment in pending_result.scalars().all():
+            await db.delete(assignment)
+            removed_pending += 1
+
+        rule.is_active = False
+        retired_rules += 1
+
+    return retired_rules, removed_pending
 
 
 def _normalize_month_day(month_day: int | None, start_date: date) -> int | None:
@@ -357,6 +427,14 @@ async def list_chores(
     user: User = Depends(get_current_user),
 ):
     if user.role in (UserRole.parent, UserRole.admin):
+        if view == "active":
+            retired, removed_pending = await _retire_exhausted_one_off_rules(
+                db,
+                await app_today(db),
+            )
+            if retired or removed_pending:
+                await db.commit()
+
         query = (
             select(Chore)
             .where(Chore.is_active == True)
@@ -554,15 +632,21 @@ async def cleanup_all_stale(
             await db.delete(assignment)
             removed += 1
 
+    retired, removed_one_off_pending = await _retire_exhausted_one_off_rules(db, today)
+    removed += removed_one_off_pending
+
     await db.commit()
 
     plural = "" if removed == 1 else "s"
+    rule_plural = "" if retired == 1 else "s"
     return {
         "message": (
             f"Repaired planned calendar: removed {removed} stale pending "
-            f"assignment{plural}. Preserved {len(exclusion_set)} exclusions."
+            f"assignment{plural}, retired {retired} exhausted one-time "
+            f"rule{rule_plural}. Preserved {len(exclusion_set)} exclusions."
         ),
         "pending_removed": removed,
+        "one_time_rules_retired": retired,
         "exclusions_preserved": len(exclusion_set),
     }
 
@@ -618,9 +702,14 @@ async def get_chore_assignments(
         )
         .where(
             ChoreAssignment.chore_id == chore_id,
-            ChoreAssignment.date >= start_date,
-            ChoreAssignment.date <= end_date,
             Chore.is_active == True,
+            (
+                (
+                    (ChoreAssignment.date >= start_date)
+                    & (ChoreAssignment.date <= end_date)
+                )
+                | (ChoreAssignment.status == AssignmentStatus.completed)
+            ),
         )
         .order_by(ChoreAssignment.date, ChoreAssignment.id)
     )
@@ -690,8 +779,52 @@ async def delete_chore(
     user: User = Depends(require_parent),
 ):
     chore = await _get_chore_or_404(db, chore_id)
+
+    status_result = await db.execute(
+        select(ChoreAssignment.status).where(ChoreAssignment.chore_id == chore_id)
+    )
+    if any(
+        assignment_status_blocks_chore_delete(status)
+        for status in status_result.scalars().all()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This quest has completed submissions waiting for approval. "
+                "Approve or send them back before removing it."
+            ),
+        )
+
     chore.is_active = False
     chore.updated_at = datetime.now(timezone.utc)
+
+    rules_result = await db.execute(
+        select(ChoreAssignmentRule).where(ChoreAssignmentRule.chore_id == chore_id)
+    )
+    for rule in rules_result.scalars().all():
+        rule.is_active = False
+
+    pending_result = await db.execute(
+        select(ChoreAssignment).where(
+            ChoreAssignment.chore_id == chore_id,
+            ChoreAssignment.status == AssignmentStatus.pending,
+        )
+    )
+    for assignment in pending_result.scalars().all():
+        await db.delete(assignment)
+
+    exclusions_result = await db.execute(
+        select(ChoreExclusion).where(ChoreExclusion.chore_id == chore_id)
+    )
+    for exclusion in exclusions_result.scalars().all():
+        await db.delete(exclusion)
+
+    rotations_result = await db.execute(
+        select(ChoreRotation).where(ChoreRotation.chore_id == chore_id)
+    )
+    for rotation in rotations_result.scalars().all():
+        await db.delete(rotation)
+
     await db.commit()
     await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=user.id)
     return None
@@ -929,19 +1062,9 @@ async def assign_chore(
                 ))
             elif existing_assignment.status == AssignmentStatus.pending:
                 existing_assignment.is_optional = item["is_optional"]
-            elif existing_assignment.status in (
-                AssignmentStatus.completed,
-                AssignmentStatus.verified,
-                AssignmentStatus.skipped,
-            ):
-                # Re-assigning a quest that was already completed/verified/skipped
-                # today: reset it to pending so the kid sees it again.
-                existing_assignment.status = AssignmentStatus.pending
-                existing_assignment.completed_at = None
-                existing_assignment.verified_at = None
-                existing_assignment.verified_by = None
-                existing_assignment.is_optional = item["is_optional"]
-                existing_assignment.updated_at = datetime.now(timezone.utc)
+            elif should_preserve_on_assignment_save(existing_assignment.status):
+                # Preserve child/parent action already recorded on this row.
+                pass
 
         db.add(_quest_assigned_notification(item["user_id"], chore))
 
@@ -1169,6 +1292,41 @@ async def reorder_chore_dayparts(
 # Chore Lifecycle (complete / verify / uncomplete / skip)
 # ---------------------------------------------------------------------------
 
+@router.get("/assignments/pending-approvals", response_model=list[AssignmentResponse])
+async def get_pending_approval_assignments(
+    kid_id: int | None = Query(None, description="Optionally filter to one kid"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_parent),
+):
+    """Return every completed assignment still waiting on parent action."""
+    stmt = (
+        select(ChoreAssignment)
+        .join(Chore, ChoreAssignment.chore_id == Chore.id)
+        .where(
+            ChoreAssignment.status == AssignmentStatus.completed,
+            Chore.is_active == True,
+        )
+        .options(
+            selectinload(ChoreAssignment.chore).selectinload(Chore.category),
+            selectinload(ChoreAssignment.user),
+        )
+        .order_by(
+            ChoreAssignment.date,
+            ChoreAssignment.completed_at,
+            ChoreAssignment.id,
+        )
+    )
+    if kid_id is not None:
+        stmt = stmt.where(ChoreAssignment.user_id == kid_id)
+
+    result = await db.execute(stmt)
+    assignments = collect_pending_approvals(
+        result.scalars().all(),
+        kid_id=kid_id,
+    )
+    return [AssignmentResponse.model_validate(a) for a in assignments]
+
+
 @router.post("/{chore_id}/complete", response_model=AssignmentResponse)
 async def complete_chore(
     chore_id: int,
@@ -1238,6 +1396,9 @@ async def complete_chore(
     assignment.status = AssignmentStatus.completed
     assignment.completed_at = now
     assignment.updated_at = now
+    if assignment_completion_advances_streak(assignment):
+        await db.flush()
+        await recompute_user_streak(db, user)
 
     await db.commit()
 
@@ -1298,27 +1459,24 @@ async def _load_assignment_for_action(
     return assignment
 
 
-async def _deactivate_one_time_rule_if_needed(
+async def _set_one_time_rule_active_for_assignment(
     db: AsyncSession,
     assignment: ChoreAssignment,
+    *,
+    is_active: bool,
 ) -> None:
     rule_result = await db.execute(
         select(ChoreAssignmentRule).where(
             ChoreAssignmentRule.chore_id == assignment.chore_id,
             ChoreAssignmentRule.user_id == assignment.user_id,
-            ChoreAssignmentRule.is_active == True,
         )
     )
     rule = rule_result.scalar_one_or_none()
     if not rule:
         return
 
-    rule_schedule_type = _value(rule.schedule_type)
-    if (
-        rule_schedule_type == "once"
-        or (rule_schedule_type is None and rule.recurrence == Recurrence.once)
-    ):
-        rule.is_active = False
+    if is_one_off_assignment_rule(rule):
+        rule.is_active = is_active
 
 
 async def _approve_assignment(
@@ -1334,21 +1492,36 @@ async def _approve_assignment(
 
     now = datetime.now(timezone.utc)
     today = await app_today(db)
+    credit_date = streak_credit_date(assignment, fallback_date=today)
     chore = assignment.chore
     base_points = chore.points
+
+    kid_result = await db.execute(select(User).where(User.id == assignment.user_id))
+    kid = kid_result.scalar_one()
+    advances_required_streak = assignment_completion_advances_streak(assignment)
+    previous_verified_streak = 0
+    if advances_required_streak:
+        previous_verified_streak = (
+            await calculate_user_streak(
+                db,
+                kid,
+                statuses=[AssignmentStatus.verified],
+            )
+        ).current_streak
 
     assignment.status = AssignmentStatus.verified
     assignment.verified_at = now
     assignment.verified_by = parent.id
     assignment.updated_at = now
 
-    # Calculate event multiplier (use naive UTC to match SQLite storage)
-    now_naive = now.replace(tzinfo=None)
+    # Calculate event multiplier from completion time so parent approval lag
+    # cannot change whether the kid earned event XP.
+    credit_timestamp = event_credit_timestamp(assignment, fallback=now)
     ev_result = await db.execute(
         select(SeasonalEvent).where(
             SeasonalEvent.is_active == True,
-            SeasonalEvent.start_date <= now_naive,
-            SeasonalEvent.end_date >= now_naive,
+            SeasonalEvent.start_date <= credit_timestamp,
+            SeasonalEvent.end_date >= credit_timestamp,
         )
     )
     active_events = ev_result.scalars().all()
@@ -1363,6 +1536,7 @@ async def _approve_assignment(
         type=PointType.chore_complete,
         description=f"Completed: {chore.title}",
         reference_id=assignment.id,
+        earned_date=credit_date,
     ))
     total_awarded = base_points
 
@@ -1376,65 +1550,44 @@ async def _approve_assignment(
                 type=PointType.event_multiplier,
                 description=f"Event bonus ({event_names}): {chore.title}",
                 reference_id=assignment.id,
+                earned_date=credit_date,
             ))
             total_awarded += bonus_points
-
-    kid_result = await db.execute(select(User).where(User.id == assignment.user_id))
-    kid = kid_result.scalar_one()
 
     kid.points_balance += total_awarded
     kid.total_points_earned += total_awarded
 
-    if assignment_completion_advances_streak(assignment):
-        if kid.last_streak_date == today:
-            pass
-        elif kid.last_streak_date is not None:
-            gap = (today - kid.last_streak_date).days
-            if gap == 1:
-                kid.current_streak += 1
-                kid.last_streak_date = today
-            elif gap > 1:
-                if await gap_preserves_streak(
-                    db, kid.id, kid.last_streak_date, today
-                ):
-                    kid.current_streak += 1
-                    kid.last_streak_date = today
-                else:
-                    current_month = today.month + today.year * 12
-                    freeze_month = kid.streak_freeze_month or 0
-                    if kid.current_streak > 0 and freeze_month != current_month:
-                        kid.streak_freezes_used = (kid.streak_freezes_used or 0) + 1
-                        kid.streak_freeze_month = current_month
-                        kid.current_streak += 1
-                        kid.last_streak_date = today
-                    else:
-                        kid.current_streak = 1
-                        kid.last_streak_date = today
-            else:
-                kid.current_streak = 1
-                kid.last_streak_date = today
-        else:
-            kid.current_streak = 1
-            kid.last_streak_date = today
-
-        if kid.current_streak > kid.longest_streak:
-            kid.longest_streak = kid.current_streak
-
+    if advances_required_streak:
+        await db.flush()
+        await recompute_user_streak(db, kid)
+        verified_streak = (
+            await calculate_user_streak(
+                db,
+                kid,
+                statuses=[AssignmentStatus.verified],
+            )
+        ).current_streak
         _STREAK_MILESTONES = (7, 30, 100)
-        if kid.current_streak in _STREAK_MILESTONES:
+        for milestone in _STREAK_MILESTONES:
+            if previous_verified_streak >= milestone or verified_streak < milestone:
+                continue
             db.add(Notification(
                 user_id=kid.id,
                 type=NotificationType.streak_milestone,
-                title=f"{kid.current_streak}-Day Streak!",
-                message=f"You've completed quests {kid.current_streak} days in a row! Keep it up!",
+                title=f"{milestone}-Day Streak!",
+                message=f"You've completed quests {milestone} days in a row! Keep it up!",
                 reference_type="streak",
             ))
 
-    achievement_date = assignment.date
+    achievement_date = credit_date
 
     await db.commit()
     await check_achievements(db, kid, activity_date=achievement_date)
-    await _deactivate_one_time_rule_if_needed(db, assignment)
+    await _set_one_time_rule_active_for_assignment(
+        db,
+        assignment,
+        is_active=one_off_assignment_keeps_rule_active(assignment.status),
+    )
 
     db.add(Notification(
         user_id=assignment.user_id,
@@ -1483,6 +1636,7 @@ async def _mark_assignment_needs_work(
 
     now = datetime.now(timezone.utc)
     assigned_user_id = assignment.user_id
+    recompute_streak = assignment_completion_advances_streak(assignment)
 
     tx_result = await db.execute(
         select(PointTransaction).where(
@@ -1500,7 +1654,14 @@ async def _mark_assignment_needs_work(
         select(User).where(User.id == assigned_user_id)
     )
     assigned_user = assigned_user_result.scalar_one()
-    assigned_user.points_balance = max(0, assigned_user.points_balance - total_deducted)
+    (
+        assigned_user.points_balance,
+        assigned_user.total_points_earned,
+    ) = point_totals_after_credit_reversal(
+        points_balance=assigned_user.points_balance,
+        total_points_earned=assigned_user.total_points_earned,
+        amount=total_deducted,
+    )
 
     for tx in transactions:
         await db.delete(tx)
@@ -1510,6 +1671,14 @@ async def _mark_assignment_needs_work(
     assignment.verified_at = None
     assignment.verified_by = None
     assignment.updated_at = now
+    await _set_one_time_rule_active_for_assignment(
+        db,
+        assignment,
+        is_active=one_off_assignment_keeps_rule_active(assignment.status),
+    )
+    if recompute_streak:
+        await db.flush()
+        await recompute_user_streak(db, assigned_user)
 
     await db.commit()
     assignment = await _reload_assignment_with_relations(db, assignment.id)
@@ -1531,6 +1700,11 @@ async def _skip_assignment(
     now = datetime.now(timezone.utc)
     assignment.status = AssignmentStatus.skipped
     assignment.updated_at = now
+    await _set_one_time_rule_active_for_assignment(
+        db,
+        assignment,
+        is_active=one_off_assignment_keeps_rule_active(assignment.status),
+    )
     await db.commit()
 
     await ws_manager.broadcast(_CHORE_CHANGED, exclude_user=parent.id)

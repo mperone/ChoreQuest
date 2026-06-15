@@ -25,6 +25,7 @@ from backend.schemas import (
 )
 from backend.dependencies import get_current_user, require_parent
 from backend.achievements import check_achievements
+from backend.services.daytime import app_today
 from backend.websocket_manager import ws_manager
 
 router = APIRouter(prefix="/api/rewards", tags=["rewards"])
@@ -143,6 +144,7 @@ async def deny_redemption(
     if kid is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    today = await app_today(db)
     kid.points_balance += redemption.points_spent
 
     refund_tx = PointTransaction(
@@ -152,6 +154,7 @@ async def deny_redemption(
         description=f"Refund for denied redemption of '{redemption.reward.title}'",
         reference_id=redemption.id,
         created_by=current_user.id,
+        earned_date=today,
     )
     db.add(refund_tx)
 
@@ -381,6 +384,7 @@ async def redeem_reward(
 
     # Deduct points
     current_user.points_balance -= reward.point_cost
+    today = await app_today(db)
 
     # Create negative point transaction
     tx = PointTransaction(
@@ -389,6 +393,7 @@ async def redeem_reward(
         type=PointType.reward_redeem,
         description=f"Redeemed reward: {reward.title}",
         reference_id=reward.id,
+        earned_date=today,
     )
     db.add(tx)
 
@@ -435,7 +440,7 @@ async def redeem_reward(
     await db.commit()
 
     # Check achievements after redemption
-    await check_achievements(db, current_user)
+    await check_achievements(db, current_user, activity_date=today)
 
     # WebSocket notification
     await ws_manager.send_to_user(current_user.id, {

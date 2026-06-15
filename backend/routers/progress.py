@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models import (
     User, UserRole, ChoreAssignment, AssignmentStatus,
-    PointTransaction,
+    PointTransaction, PointType,
 )
 from backend.dependencies import get_current_user
 from backend.services.daytime import app_today
@@ -38,19 +38,25 @@ async def get_progress(
     if not user_ids:
         return {"days": [], "summary": {}}
 
-    # Daily XP earned
+    # Daily XP earned. earned_date is the family-date credit bucket; created_at
+    # remains the audit timestamp and is only used as a legacy fallback.
+    credit_day = func.coalesce(
+        PointTransaction.earned_date,
+        func.date(PointTransaction.created_at),
+    )
     xp_result = await db.execute(
         select(
-            func.date(PointTransaction.created_at).label("day"),
+            credit_day.label("day"),
             func.sum(PointTransaction.amount).label("xp"),
         )
         .where(
             PointTransaction.user_id.in_(user_ids),
             PointTransaction.amount > 0,
-            func.date(PointTransaction.created_at) >= start,
-            func.date(PointTransaction.created_at) <= today,
+            PointTransaction.type != PointType.reward_redeem,
+            credit_day >= start,
+            credit_day <= today,
         )
-        .group_by(func.date(PointTransaction.created_at))
+        .group_by(credit_day)
     )
     xp_by_day = {str(row.day): row.xp or 0 for row in xp_result.all()}
 
@@ -84,6 +90,7 @@ async def get_progress(
             ChoreAssignment.date >= start,
             ChoreAssignment.date <= today,
             ChoreAssignment.is_optional == False,
+            ChoreAssignment.status != AssignmentStatus.skipped,
         )
         .group_by(ChoreAssignment.date)
     )

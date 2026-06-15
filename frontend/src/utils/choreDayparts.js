@@ -15,7 +15,8 @@ export const DAILY_SECTION_META = {
 }
 
 const REQUIRED_DONE_STATUSES = new Set(['completed', 'verified'])
-const HOME_VISIBLE_DONE_STATUSES = new Set(['completed', 'verified'])
+const SETTLED_STATUSES = new Set(['completed', 'verified', 'skipped'])
+const HOME_VISIBLE_DONE_STATUSES = new Set(['completed', 'verified', 'skipped'])
 
 export function currentDaypartForHour(hour) {
   if (hour < 12) return 'morning'
@@ -56,6 +57,10 @@ function assignmentStatus(item) {
 
 function isDone(item) {
   return REQUIRED_DONE_STATUSES.has(assignmentStatus(item))
+}
+
+function isSettled(item) {
+  return SETTLED_STATUSES.has(assignmentStatus(item))
 }
 
 export function kidCompletionLabelForAssignment(item) {
@@ -160,16 +165,18 @@ export function groupDailyAssignments(items, { currentDaypart } = {}) {
 
   let requiredDone = 0
   let requiredTotal = 0
+  let requiredSettled = 0
 
   for (const item of items || []) {
     const chore = choreFromAssignment(item)
     const daypart = normaliseDaypart(chore.daypart)
     const optional = isOptional(item)
     const done = isDone(item)
+    const settled = isSettled(item)
     const futureRequired = daypart !== 'anytime' && daypartRank(daypart) > daypartRank(activeDaypart)
 
     if (optional) {
-      if (!done) sections.bonus.items.push(item)
+      if (!done && !settled) sections.bonus.items.push(item)
       continue
     }
 
@@ -177,6 +184,11 @@ export function groupDailyAssignments(items, { currentDaypart } = {}) {
 
     if (done) {
       requiredDone += 1
+      continue
+    }
+
+    if (settled) {
+      requiredSettled += 1
       continue
     }
 
@@ -200,7 +212,8 @@ export function groupDailyAssignments(items, { currentDaypart } = {}) {
     sections,
     requiredDone,
     requiredTotal,
-    requiredLeft: Math.max(0, requiredTotal - requiredDone),
+    requiredSettled,
+    requiredLeft: Math.max(0, requiredTotal - requiredDone - requiredSettled),
     nextUp: sections.now.items[0] || sections.anytime.items[0] || sections.later.items[0] || null,
   }
 }

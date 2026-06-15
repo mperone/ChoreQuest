@@ -233,6 +233,7 @@ class PointTransactionResponse(BaseModel):
     type: PointType
     description: str
     reference_id: int | None
+    earned_date: date | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

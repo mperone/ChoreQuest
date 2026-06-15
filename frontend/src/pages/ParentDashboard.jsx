@@ -24,7 +24,6 @@ import Modal from '../components/Modal';
 import {
   approvalDateLabel,
   assignmentActionState,
-  collectPendingApprovals,
 } from '../utils/assignmentActions';
 import { todayISOInTimeZone } from '../utils/daytime';
 
@@ -55,14 +54,13 @@ export default function ParentDashboard() {
     try {
       setError(null);
 
-      const [familyRes, calendarRes] = await Promise.all([
+      const [familyRes, approvalRes] = await Promise.all([
         api('/api/stats/family'),
-        api('/api/calendar'),
+        api('/api/chores/assignments/pending-approvals'),
       ]);
 
       setFamilyStats(familyRes);
-
-      setApprovalInboxItems(collectPendingApprovals(calendarRes.days));
+      setApprovalInboxItems(Array.isArray(approvalRes) ? approvalRes : []);
     } catch (err) {
       setError(err.message || 'Failed to load family data');
     } finally {

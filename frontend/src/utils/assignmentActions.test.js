@@ -25,12 +25,15 @@ test('assignment action state only skips pending assignments', () => {
   });
 });
 
-test('assignment action state disables actions for settled assignments', () => {
+test('assignment action state allows approved assignments to be sent back', () => {
   assert.deepEqual(assignmentActionState({ status: 'verified' }), {
     canApprove: false,
-    canSendBack: false,
+    canSendBack: true,
     canSkip: false,
   });
+});
+
+test('assignment action state disables actions for skipped assignments', () => {
   assert.deepEqual(assignmentActionState({ status: 'skipped' }), {
     canApprove: false,
     canSendBack: false,

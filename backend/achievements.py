@@ -8,6 +8,7 @@ from backend.models import (
 )
 from backend.websocket_manager import ws_manager
 from backend.services.daytime import get_daily_rollover_timezone
+from backend.services.streaks import calculate_user_streak
 
 RETIRED_ACHIEVEMENT_KEYS = frozenset({
     "pet_youngling",
@@ -71,7 +72,12 @@ async def check_achievements(
             achievement.criteria,
             activity_date=activity_date,
         ):
-            await _unlock_achievement(db, user, achievement)
+            await _unlock_achievement(
+                db,
+                user,
+                achievement,
+                earned_date=activity_date,
+            )
 
 
 async def _check_criteria(
@@ -97,7 +103,12 @@ async def _check_criteria(
         return count >= criteria["count"]
 
     elif ctype == "consecutive_days_all_complete":
-        return user.current_streak >= criteria["days"]
+        streak = await calculate_user_streak(
+            db,
+            user,
+            statuses=[AssignmentStatus.verified],
+        )
+        return streak.current_streak >= criteria["days"]
 
     elif ctype == "total_points_earned":
         return user.total_points_earned >= criteria["amount"]
@@ -117,7 +128,12 @@ async def _check_criteria(
         return False
 
     elif ctype == "streak_reached":
-        return user.current_streak >= criteria["days"]
+        streak = await calculate_user_streak(
+            db,
+            user,
+            statuses=[AssignmentStatus.verified],
+        )
+        return streak.current_streak >= criteria["days"]
 
     elif ctype == "total_redemptions":
         result = await db.execute(
@@ -174,7 +190,13 @@ async def _check_criteria(
     return False
 
 
-async def _unlock_achievement(db: AsyncSession, user: User, achievement: Achievement):
+async def _unlock_achievement(
+    db: AsyncSession,
+    user: User,
+    achievement: Achievement,
+    *,
+    earned_date: date | None = None,
+):
     ua = UserAchievement(user_id=user.id, achievement_id=achievement.id)
     db.add(ua)
 
@@ -188,6 +210,7 @@ async def _unlock_achievement(db: AsyncSession, user: User, achievement: Achieve
             type=PointType.achievement,
             description=f"Achievement unlocked: {achievement.title}",
             reference_id=achievement.id,
+            earned_date=earned_date,
         )
         db.add(tx)
 

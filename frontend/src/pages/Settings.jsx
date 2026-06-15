@@ -242,7 +242,7 @@ export default function Settings() {
                 Bonus XP Events
               </h2>
               <p className="text-muted text-xs mt-1">
-                Create temporary multipliers for approved quest XP.
+                Create temporary multipliers for quests completed during an event.
               </p>
             </div>
             <button

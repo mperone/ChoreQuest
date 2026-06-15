@@ -371,6 +371,52 @@ class MigrationRunnerTests(unittest.TestCase):
             self.assertIn("sort_order", cols)
             self.assertEqual(row, ("anytime", 0))
 
+    def test_adds_and_backfills_point_transaction_earned_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "app.db"
+            backup_dir = Path(tmp) / "backups"
+
+            with closing(sqlite3.connect(db_path)) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE point_transactions (
+                        id INTEGER PRIMARY KEY,
+                        amount INTEGER NOT NULL,
+                        created_at DATETIME
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO point_transactions (id, amount, created_at)
+                    VALUES (1, 10, '2026-06-14 21:30:00')
+                    """
+                )
+                conn.commit()
+
+            migration = next(
+                m for m in MIGRATIONS
+                if m.id == "2026_06_15_point_transactions_earned_date_v1"
+            )
+
+            run_sqlite_migrations(
+                f"sqlite+aiosqlite:///{db_path}",
+                migrations=[migration],
+                backup_dir=backup_dir,
+            )
+
+            with closing(sqlite3.connect(db_path)) as conn:
+                cols = {
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(point_transactions)")
+                }
+                row = conn.execute(
+                    "SELECT earned_date FROM point_transactions WHERE id = 1"
+                ).fetchone()
+
+            self.assertIn("earned_date", cols)
+            self.assertEqual(row, ("2026-06-14",))
+
 
 if __name__ == "__main__":
     unittest.main()

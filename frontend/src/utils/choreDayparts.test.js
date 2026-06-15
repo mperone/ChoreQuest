@@ -93,7 +93,7 @@ test('hides empty daily groups and sorts by daypart order then sort order', () =
   assert.deepEqual(groups.now.items.map((entry) => entry.title), ['First', 'Second'])
 })
 
-test('keeps skipped required chores left and actionable', () => {
+test('treats skipped required chores as settled without counting as done', () => {
   const groups = groupDailyAssignments(
     [
       item({ id: 1, title: 'Try again', daypart: 'morning', status: 'skipped' }),
@@ -101,11 +101,11 @@ test('keeps skipped required chores left and actionable', () => {
     { currentDaypart: 'morning' },
   )
 
-  assert.deepEqual(groups.now.items.map((entry) => entry.title), ['Try again'])
+  assert.deepEqual(groups.now.items.map((entry) => entry.title), [])
   assert.equal(groups.requiredTotal, 1)
   assert.equal(groups.requiredDone, 0)
-  assert.equal(groups.requiredLeft, 1)
-  assert.equal(groups.nextUp.title, 'Try again')
+  assert.equal(groups.requiredLeft, 0)
+  assert.equal(groups.nextUp, null)
 })
 
 test('uses Mark Done as the kid-facing completion action for every pending chore', () => {

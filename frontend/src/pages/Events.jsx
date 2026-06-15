@@ -286,7 +286,7 @@ export default function Events() {
               placeholder="e.g. 2.0"
               className="field-input"
             />
-            <p className="text-muted text-xs mt-1">Approved quest XP earns this multiplier while the event is active.</p>
+            <p className="text-muted text-xs mt-1">Quests completed while the event is active earn this multiplier when approved.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
