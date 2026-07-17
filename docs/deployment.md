@@ -78,8 +78,12 @@ Targeting `chorequest` rebuilds and recreates that service without taking the en
 cd /docker/docker-compose
 docker compose -f docker-compose.yaml ps chorequest
 docker compose -f docker-compose.yaml logs --tail=100 chorequest
-curl -fsS http://127.0.0.1:8122/api/health
+docker exec chorequest python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8122/api/health').read().decode())"
+curl -fsS https://chores.mperone.com/api/health
 ```
+
+The container-local check does not depend on a host port mapping or host-to-macvlan connectivity. The public check verifies the full Nginx Proxy Manager path.
 
 After a frontend deployment, open ChoreQuest on installed mobile clients and accept the `Update available — tap to refresh` prompt so the new service worker and assets take control.
 
