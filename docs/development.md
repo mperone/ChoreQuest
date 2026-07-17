@@ -4,8 +4,9 @@ This repo is the development clone. It must stay separate from the live Docker c
 
 ## Safety Rules
 
-- Do not use `/docker/containers/chorequest/ChoreQuest` from this workspace.
-- Do not use `/docker/containers/chorequest/data` from this workspace.
+- Do not use the production checkout at `/docker/docker-compose/apps/chorequest/ChoreQuest` from this workspace.
+- Do not use production configuration under `/docker/docker-compose/apps/chorequest` or the root project at `/docker/docker-compose/docker-compose.yaml` from this workspace.
+- Do not read from or depend on the production mount mapped to `/app/data` in the ChoreQuest container.
 - Keep local SQLite data in this repo's ignored `./data/` directory.
 - Do not put real production secrets in `.env`, docs, commits, shell history, or test fixtures.
 - Treat port `8122` as production. Local backend development should use port `8123`.
@@ -96,4 +97,4 @@ Before running the app locally, confirm:
 - `.env` contains `CHOREQUEST_BACKEND_URL=http://localhost:8123`.
 - Backend command uses `--port 8123`.
 - Browser is opened to `http://localhost:5173`, not the production host.
-- No command references `/docker/containers/chorequest/ChoreQuest` or `/docker/containers/chorequest/data`.
+- No local-development command references `/docker/docker-compose` or production container data.

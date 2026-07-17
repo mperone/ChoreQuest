@@ -5,8 +5,9 @@ These notes are for future Codex sessions working in this development checkout.
 ## Repository Boundaries
 
 - This checkout is for local development only.
-- Do not edit, read from, copy from, or depend on the production checkout at `/docker/containers/chorequest/ChoreQuest`.
-- Do not edit, read from, copy from, or depend on production data at `/docker/containers/chorequest/data`.
+- Do not edit, read from, copy from, or depend on the production checkout at `/docker/docker-compose/apps/chorequest/ChoreQuest`.
+- Do not edit, read from, copy from, or depend on production configuration under `/docker/docker-compose/apps/chorequest` or the root project at `/docker/docker-compose/docker-compose.yaml`.
+- Do not edit, read from, copy from, or depend on the production mount mapped to `/app/data` in the ChoreQuest container.
 - Keep local data under this repo's ignored `./data/` directory. The intended local SQLite database is `./data/chores_os_dev.db`.
 - Do not commit secrets. `.env` is ignored; use `.env.example` for safe local defaults.
 

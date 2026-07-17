@@ -1,56 +1,93 @@
 # Deployment Notes
 
-This is the intended future flow for moving local development changes to the Docker server. Do not run these steps from the dev workspace unless you are intentionally preparing a release.
+This is the production flow for moving verified local changes to the Docker host. The development checkout, production source checkout, production configuration, and production data must remain separate.
 
-## Flow
+## Docker Host Layout
 
-1. Develop and verify changes locally in this dev clone.
-2. Commit on a feature branch and push to the fork at `https://github.com/mperone/ChoreQuest.git`.
-3. Review or merge the branch as appropriate.
-4. On the Docker server, use the separate production checkout at `/docker/containers/chorequest/ChoreQuest`.
-5. Pull the selected commit or branch into the production checkout.
-6. Rebuild and restart the Docker service.
-7. Verify health and the main user flows on production.
+| Path | Purpose |
+| --- | --- |
+| `/docker/docker-compose/docker-compose.yaml` | Root Compose project; defines shared resources such as the `macvlan` network. |
+| `/docker/docker-compose/apps/chorequest/compose.yaml` | ChoreQuest service definition included by the root project. |
+| `/docker/docker-compose/apps/chorequest/.env` | Values used while parsing the ChoreQuest include. Never copy this file into the development repo. |
+| `/docker/docker-compose/apps/chorequest/ChoreQuest` | Production Git checkout and Docker build context. |
 
-## Before Pulling on the Server
+The root Compose file connects the app fragment with:
 
-- Confirm you are in `/docker/containers/chorequest/ChoreQuest`, not the local dev clone.
-- Confirm the target commit or branch.
-- Back up `/docker/containers/chorequest/data` before changing code.
-- Record the currently deployed commit with `git rev-parse HEAD`.
-- Check Docker logs and current health so you know the pre-deploy state.
-
-Example backup shape:
-
-```bash
-cd /docker/containers/chorequest
-tar -czf backups/chorequest-data-$(date +%Y%m%d-%H%M%S).tar.gz data
+```yaml
+include:
+  - path: ./apps/chorequest/compose.yaml
+    env_file:
+      - ./apps/chorequest/.env
 ```
 
-## Rebuild
+The included file has its own project directory, so relative paths such as `build: ./ChoreQuest` resolve under `/docker/docker-compose/apps/chorequest`.
 
-Typical production update from the production checkout:
+The ChoreQuest file is not a standalone Compose project: its service refers to the shared `macvlan` network defined by the root file. Running `docker compose -f compose.yaml ...` from the app directory therefore fails with `undefined network macvlan`. Always run Compose lifecycle commands through `/docker/docker-compose/docker-compose.yaml`.
+
+## Release Flow
+
+1. Develop and verify changes in the local development checkout.
+2. Commit and push the selected changes to `https://github.com/mperone/ChoreQuest.git`.
+3. On the Docker host, pull the selected commit into `/docker/docker-compose/apps/chorequest/ChoreQuest`.
+4. Validate the combined root Compose model.
+5. Build and recreate only the `chorequest` service through the root project.
+6. Verify container health, logs, and the affected user flow.
+
+## Before Deploying
+
+Record the currently deployed commit and confirm that the production checkout has no unexpected local changes:
 
 ```bash
-cd /docker/containers/chorequest/ChoreQuest
+cd /docker/docker-compose/apps/chorequest/ChoreQuest
+git status --short
+git rev-parse HEAD
+```
+
+Production data is the Docker mount whose container destination is `/app/data`. Its host location is controlled by the production app Compose file and is not the development repo's ignored `./data/` directory. Resolve the live mount before backing it up:
+
+```bash
+docker inspect chorequest \
+  --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+Back up the host source mapped to `/app/data` before deploying database or migration changes. Keep the normal manual backup step even though ChoreQuest also creates migration backups automatically.
+
+## Pull and Rebuild
+
+Update the production source checkout:
+
+```bash
+cd /docker/docker-compose/apps/chorequest/ChoreQuest
 git fetch origin
-git pull --ff-only
-docker compose up -d --build
+git pull --ff-only origin main
 ```
 
-Then verify:
+Then use the root Compose project. Do not pass the app-level Compose file directly, and do not add an app-level `--env-file`; the root `include` already supplies it.
 
 ```bash
-docker compose ps
-docker compose logs --tail=100 chorequest
-curl http://localhost:8122/api/health
+cd /docker/docker-compose
+docker compose -f docker-compose.yaml config --quiet
+docker compose -f docker-compose.yaml up -d --build chorequest
 ```
+
+Targeting `chorequest` rebuilds and recreates that service without taking the entire Compose project down.
+
+## Verify
+
+```bash
+cd /docker/docker-compose
+docker compose -f docker-compose.yaml ps chorequest
+docker compose -f docker-compose.yaml logs --tail=100 chorequest
+curl -fsS http://127.0.0.1:8122/api/health
+```
+
+After a frontend deployment, open ChoreQuest on installed mobile clients and accept the `Update available — tap to refresh` prompt so the new service worker and assets take control.
 
 ## Startup Migrations
 
-ChoreQuest records startup database migrations in a `schema_migrations` table inside the SQLite database. When the container starts, the app checks that table and applies any pending migrations before FastAPI begins serving requests.
+ChoreQuest records startup database migrations in a `schema_migrations` table inside the SQLite database. When the container starts, the app checks that table and applies pending migrations before FastAPI begins serving requests.
 
-If a pending migration changes the database, the app first creates a SQLite backup in the database directory's `backups/` folder. With the production Docker volume, that means backups live under `/docker/containers/chorequest/data/backups/`.
+If a pending migration changes the database, the app first creates a SQLite backup under `/app/data/backups/`. On the host, this appears under the source of the production mount mapped to `/app/data`.
 
 Migration rules:
 
@@ -59,23 +96,23 @@ Migration rules:
 - Migrations are recorded only after they complete successfully.
 - Re-running the container skips migrations already listed in `schema_migrations`.
 
-Keep the manual pre-deploy backup step. Automatic migration backups are a safety net, not a replacement for an intentional release backup.
+Automatic migration backups are a safety net, not a replacement for an intentional pre-deploy backup.
 
 ## Rollback
 
-If the release fails:
+If a release fails:
 
-1. Capture failing logs before changing anything.
-2. Stop the service if needed.
-3. Check out the previously recorded commit.
-4. Rebuild and restart with `docker compose up -d --build`.
-5. Restore the data backup only if the failed release changed data in a way the old code cannot read.
-6. Verify `http://localhost:8122/api/health` and the affected user flows.
+1. Capture the failing logs before changing anything.
+2. Return the production checkout to the previously recorded commit.
+3. From `/docker/docker-compose`, run `docker compose -f docker-compose.yaml up -d --build chorequest`.
+4. Restore the data backup only if the failed release changed data in a way the old code cannot read.
+5. Verify the health endpoint and affected user flows.
 
 ## Reminders
 
-- Production data lives in `/docker/containers/chorequest/data`.
-- Local dev data lives in this repo's `./data`.
-- Never use the local dev database as a production backup source.
-- Never copy production `.env` values into the dev repo.
+- Production source lives at `/docker/docker-compose/apps/chorequest/ChoreQuest`.
+- Production Compose commands run from `/docker/docker-compose` against `docker-compose.yaml`.
+- Production app configuration stays beside the included app Compose file, outside the Git checkout.
+- Local development data stays in this repo's ignored `./data/` directory.
+- Never use local development data as a production backup source.
 - `8122` is the production service port; `8123` is for local backend development.
