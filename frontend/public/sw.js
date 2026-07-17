@@ -79,6 +79,11 @@ self.addEventListener('fetch', (event) => {
 
   // Network-first for API calls
   if (url.pathname.startsWith('/api/')) {
+    // Let the browser send mutations natively, especially multipart uploads.
+    if (request.method !== 'GET') {
+      return;
+    }
+
     event.respondWith(
       fetch(request)
         .then((response) => response)
